@@ -26,7 +26,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, '..');
 const blogDir = path.join(projectRoot, 'src/content/blog');
 
-// src/assets/ に同梱されているプレースホルダー画像（記事ごとに一枚割り当てる）
+// src/assets/ に同梱されているプレースホルダー画像（記事ごとに一枚割り当てる）。
+// heroImage はこのリストの値だけを使う。モデルには一切生成させない。
 const HERO_IMAGES = [
 	'../../assets/blog-placeholder-1.jpg',
 	'../../assets/blog-placeholder-2.jpg',
@@ -34,6 +35,26 @@ const HERO_IMAGES = [
 	'../../assets/blog-placeholder-4.jpg',
 	'../../assets/blog-placeholder-5.jpg',
 ];
+
+/**
+ * slug から heroImage を決定する。
+ * 実ファイルの存在を確認し、存在するものだけを候補にする
+ * （存在しないパスを frontmatter に書くと Astro のビルドが落ちるため）。
+ */
+function pickHeroImage(slug) {
+	// heroImage のパスは src/content/blog/<slug>.md からの相対パス
+	const available = HERO_IMAGES.filter((image) =>
+		fs.existsSync(path.resolve(blogDir, image)),
+	);
+
+	if (available.length === 0) {
+		throw new Error(
+			`プレースホルダー画像が見つかりません（${path.join(projectRoot, 'src/assets')} を確認してください）`,
+		);
+	}
+
+	return available[hash(slug) % available.length];
+}
 
 /** 構造化出力のスキーマ。frontmatter 用の項目と本文を分けて受け取る。 */
 const ARTICLE_SCHEMA = {
@@ -54,7 +75,8 @@ const ARTICLE_SCHEMA = {
 		},
 		body: {
 			type: 'string',
-			description: '記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。',
+			description:
+				'記事本文の Markdown。frontmatter・H1 見出し・画像は含めない（H2 から始める）。heroImage などの画像パスは書かない。',
 		},
 	},
 	required: ['title', 'description', 'slug', 'body'],
@@ -84,6 +106,11 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 - 実在しない型番や製品名を作らない。判断に迷う場合は「エントリーモデル」「ミドルレンジモデル」のような類型で書く。
 - 医療・健康・金融など断定が危険な領域では、専門家への相談を促す一文を添える。
 
+# 出力してはいけないもの（重要）
+- frontmatter（--- で囲まれたメタデータ）は書かない。title・description・pubDate・heroImage はスクリプト側で付与する。
+- heroImage や画像のパス・ファイル名を書かない。存在しない画像を参照するとビルドが失敗する。
+- 本文に Markdown の画像記法（![...](...)）や <img> タグを入れない。
+
 # 文体
 - 「です・ます」調。1文は60文字程度まで。
 - 誇大表現（絶対、必ず儲かる、最安値保証 等）は使わない。
@@ -97,7 +124,7 @@ function buildUserPrompt(keyword, today) {
 
 - title には上記キーワードまたはその自然な言い換えを含めてください。
 - slug はキーワードの意味を英語で表した半角英小文字のスラッグにしてください（ローマ字表記より、意味が伝わる英語を優先）。
-- body は frontmatter を含めず、本文の Markdown のみを返してください。`;
+- body は frontmatter（heroImage を含む）や画像記法を含めず、本文の Markdown のみを返してください。`;
 }
 
 function parseArgs(argv) {
@@ -277,7 +304,17 @@ function normalizeBody(body) {
 	// 先頭の H1 を除去（タイトルは frontmatter 側で持つ）
 	text = text.replace(/^#\s+.*\n+/, '');
 
-	return `${text}\n`;
+	// frontmatter 外に漏れた heroImage 行を除去
+	text = text.replace(/^[ \t]*heroImage[ \t]*:.*\n?/gim, '');
+
+	// モデルが作った画像参照を除去（存在しないパスを参照するとビルドが落ちる）
+	text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+	text = text.replace(/<img\b[^>]*>/gi, '');
+
+	// 除去の結果できた空行の連続をまとめる
+	text = text.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n');
+
+	return `${text.trim()}\n`;
 }
 
 /** YAML のシングルクオート文字列として安全な形にする。 */
@@ -338,7 +375,7 @@ async function main() {
 			title: article.title,
 			description: article.description,
 			pubDate: new Date().toISOString().slice(0, 10),
-			heroImage: HERO_IMAGES[hash(slug) % HERO_IMAGES.length],
+			heroImage: pickHeroImage(slug),
 		}) + body;
 
 	fs.mkdirSync(blogDir, { recursive: true });

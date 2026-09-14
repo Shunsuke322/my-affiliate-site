@@ -11,7 +11,7 @@ heroImage: 'https://picsum.photos/seed/hair-care-bottle/1200/630'
 
 ## 育毛剤とは何か、まず前提を整理する
 
-![頭皮ケアをする女性のイメージ](https://picsum.photos/seed/scalp-care-routine/800/450)
+![頭皮ケアをする女性のイメージ](https://picsum.photos/seed/hair　tonic/800/450)
 
 育毛剤という言葉は幅広く使われますが、法律上の区分は主に3つに分かれます。
 

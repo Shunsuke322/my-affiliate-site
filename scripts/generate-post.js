@@ -28,12 +28,13 @@ const blogDir = path.join(projectRoot, 'src/content/blog');
 const publicDir = path.join(projectRoot, 'public');
 
 // 記事内画像・アイキャッチ画像に使うフリー画像 API。
-// https://loremflickr.com/{width}/{height}/{english_keyword} でキーワードに沿った画像が返る。
-const IMAGE_HOST = 'loremflickr.com';
+// https://picsum.photos/seed/{english_keyword}/{width}/{height} で、
+// シード値ごとに固定された画像が返る（同じシードなら常に同じ画像）。
+const IMAGE_HOST = 'picsum.photos';
 const BODY_IMAGE_SIZE = { width: 800, height: 450 };
 const HERO_IMAGE_SIZE = { width: 1200, height: 630 };
 
-// AI が妥当な LoremFlickr URL を返さなかった場合に使うフォールバック用のプレースホルダー画像。
+// AI が妥当な Picsum URL を返さなかった場合に使うフォールバック用のプレースホルダー画像。
 // Cloudflare Pages で Astro の画像最適化が失敗するため、src/assets/ の相対パスではなく
 // public/ をルートとした絶対パスで参照する。
 const HERO_IMAGES = [
@@ -78,23 +79,35 @@ function pickHeroImage(slug) {
 	return available[hash(slug) % available.length];
 }
 
-/** LoremFlickr のキーワード部分を半角英小文字・数字・ハイフン・カンマだけに整える。 */
-function sanitizeImageKeywords(raw) {
+/**
+ * Picsum の seed に使うキーワードを半角英小文字・数字・ハイフンだけに整える。
+ * カンマ区切りで複数語が来た場合はハイフンで連結し、同じキーワードなら常に同じ
+ * シード（＝同じ画像）になるようにする。
+ */
+function sanitizeImageSeed(raw) {
 	return String(raw ?? '')
 		.toLowerCase()
-		.split(',')
-		.map((word) => word.replace(/[^a-z0-9-]+/g, ''))
+		.split(/[,\s]+/)
+		.map((word) => word.replace(/[^a-z0-9-]+/g, '').replace(/^-+|-+$/g, ''))
 		.filter(Boolean)
 		.slice(0, 4)
-		.join(',');
+		.join('-')
+		.slice(0, 60)
+		.replace(/-+$/g, '');
+}
+
+/** シード値とサイズから Picsum の画像 URL を組み立てる。 */
+function buildImageUrl(seed, { width, height }) {
+	// seed はパスの1セグメントなので、想定外の文字が残っても URL が壊れないようエンコードする
+	return `https://${IMAGE_HOST}/seed/${encodeURIComponent(seed)}/${width}/${height}`;
 }
 
 /**
- * AI が生成した画像 URL を https://loremflickr.com/{width}/{height}/{keywords} の形に正規化する。
- * LoremFlickr 以外の URL やローカルパス、キーワードを取り出せないものは null を返す
+ * AI が生成した画像 URL を https://picsum.photos/seed/{seed}/{width}/{height} の形に正規化する。
+ * Picsum 以外の URL やローカルパス、シードを取り出せないものは null を返す
  * （存在しない画像を参照するとビルドや表示が壊れるため、呼び出し側で除去・代替する）。
  */
-function normalizeImageUrl(rawUrl, { width, height }) {
+function normalizeImageUrl(rawUrl, size) {
 	let url;
 	try {
 		url = new URL(String(rawUrl).trim());
@@ -104,7 +117,7 @@ function normalizeImageUrl(rawUrl, { width, height }) {
 
 	if (url.protocol !== 'https:' || url.hostname !== IMAGE_HOST) return null;
 
-	// パスは /800/450/laptop,desk の形。数字のセグメント（サイズ）を飛ばした先がキーワード。
+	// パスは /seed/laptop-desk/800/450 の形。
 	let pathname = url.pathname;
 	try {
 		pathname = decodeURIComponent(pathname);
@@ -112,12 +125,19 @@ function normalizeImageUrl(rawUrl, { width, height }) {
 		// 不正なエスケープが含まれる場合は素の pathname のまま扱う
 	}
 
-	const keywords = sanitizeImageKeywords(
-		pathname.split('/').find((segment) => segment && !/^\d+$/.test(segment)),
-	);
-	if (!keywords) return null;
+	const segments = pathname.split('/').filter(Boolean);
+	const seedIndex = segments.indexOf('seed');
 
-	return `https://${IMAGE_HOST}/${width}/${height}/${keywords}`;
+	// seed/ が付いていない（サイズだけ、または旧 LoremFlickr 風の並び）場合も、
+	// 数字以外の最初のセグメントをシードとして拾う
+	const seed = sanitizeImageSeed(
+		seedIndex !== -1
+			? segments[seedIndex + 1]
+			: segments.find((segment) => !/^\d+$/.test(segment)),
+	);
+	if (!seed) return null;
+
+	return buildImageUrl(seed, size);
 }
 
 /**
@@ -201,12 +221,12 @@ const ARTICLE_SCHEMA = {
 		heroImage: {
 			type: 'string',
 			description:
-				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://loremflickr.com/1200/630/{english_keyword} の形式で出力する（例: https://loremflickr.com/1200/630/laptop,desk）。',
+				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://picsum.photos/seed/{english_keyword}/1200/630 の形式で出力する（例: https://picsum.photos/seed/laptop-desk/1200/630）。',
 		},
 		body: {
 			type: 'string',
 			description:
-				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。各 H2 見出しの直下には ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚挿入する。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
+				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。各 H2 見出しの直下には ![日本語のaltテキスト](https://picsum.photos/seed/{english_keyword}/800/450) 形式の画像を1枚挿入する。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
 		},
 	},
 	required: ['title', 'description', 'slug', 'heroImage', 'body'],
@@ -242,13 +262,13 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 
 # 画像の挿入（重要）
 - 本文のすべての H2 見出し（##）の直下に、その見出しの内容に関連した画像を1枚だけ挿入する。見出し行の次に空行を1行入れ、その次の行に画像を置き、さらに空行を挟んで本文を続ける。
-- 画像は Markdown の画像記法 ![altテキスト](URL) で書く。<img> タグやローカルの画像パス、loremflickr.com 以外の URL は使わない。
-- 本文中の画像の URL は必ず https://loremflickr.com/800/450/{english_keyword} の形式にする。
-- {english_keyword} はその見出しの内容に沿った英語キーワードを自分で考えて埋め込む。半角英小文字のみで、複数指定する場合は laptop,gadget,desk のようにカンマ区切りで2〜3語まで。スペース・日本語・記号は入れない。
-- 見出しごとに異なるキーワードを選び、同じ URL を繰り返さない。
+- 画像は Markdown の画像記法 ![altテキスト](URL) で書く。<img> タグやローカルの画像パス、picsum.photos 以外の URL は使わない。
+- 本文中の画像の URL は必ず https://picsum.photos/seed/{english_keyword}/800/450 の形式にする。サイズはシード値の後ろに置く。
+- {english_keyword} はその見出しの内容に沿った英語キーワードを自分で考えて埋め込む。半角英小文字のみで、複数の語を並べる場合は laptop-gadget-desk のようにハイフン区切りで2〜3語まで。スペース・日本語・記号・カンマは入れない。
+- 見出しごとに異なるキーワードを選び、同じ URL を繰り返さない（シード値が同じだと同じ画像になる）。
 - alt テキストには画像の内容を表す日本語の説明を入れる。空にしたり、英語キーワードをそのまま書いたりしない。
-  例: ![デスクに置かれたノートパソコンとコーヒー](https://loremflickr.com/800/450/laptop,desk)
-- frontmatter のアイキャッチ画像（heroImage フィールド）にも、記事全体のテーマを表す英語キーワードを使った https://loremflickr.com/1200/630/{english_keyword} を生成して入れる。本文用とは別に、記事のテーマを最もよく表すキーワードを選ぶ。
+  例: ![デスクに置かれたノートパソコンとコーヒー](https://picsum.photos/seed/laptop-desk/800/450)
+- frontmatter のアイキャッチ画像（heroImage フィールド）にも、記事全体のテーマを表す英語キーワードを使った https://picsum.photos/seed/{english_keyword}/1200/630 を生成して入れる。本文用とは別に、記事のテーマを最もよく表すキーワードを選ぶ。
 
 # 出力してはいけないもの（重要）
 - body に frontmatter（--- で囲まれたメタデータ）は書かない。title・description・slug・heroImage はそれぞれのフィールドで返す。

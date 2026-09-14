@@ -44,6 +44,20 @@ const HERO_IMAGES = [
 	'/blog-placeholder-5.jpg',
 ];
 
+// 楽天アフィリエイトID（楽天アフィリエイトの管理画面で発行されるリンク用ID）。
+const RAKUTEN_AFFILIATE_ID = '5788b385.cdd442d9.5788b386.be0db29f';
+
+// pc パラメータに入れる楽天市場の検索結果 URL。この間にエンコード済みキーワードを挟む。
+const RAKUTEN_SEARCH_PREFIX = 'https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F';
+const RAKUTEN_SEARCH_SUFFIX = '%2F';
+
+// AI が本文に埋め込むアフィリエイトリンクのプレースホルダー。
+// AFFILIATE_LINK:ワイヤレスイヤホン と AFFILIATE_LINK_1:ワイヤレスイヤホン の両形式を受け付ける
+// （キーワードのない AFFILIATE_LINK_1 だけの場合は記事のキーワードで代替する）。
+const AFFILIATE_MARKDOWN_LINK =
+	/\[([^\]]*)\]\(\s*AFFILIATE_LINK(?:_\d+)?(?:\s*[:：]\s*([^)]*))?\s*\)/g;
+const AFFILIATE_BARE_PLACEHOLDER = /AFFILIATE_LINK(?:_\d+)?(?:\s*[:：]\s*([^\s)\]、。]+))?/g;
+
 /**
  * slug からフォールバック用の heroImage を決定する。
  * 実ファイルの存在を確認し、存在するものだけを候補にする
@@ -106,6 +120,67 @@ function normalizeImageUrl(rawUrl, { width, height }) {
 	return `https://${IMAGE_HOST}/${width}/${height}/${keywords}`;
 }
 
+/**
+ * 楽天市場の検索キーワードとして使える形に整える。
+ * Markdown の記号や改行を落とし、長すぎるものは切り詰める。
+ */
+function sanitizeSearchKeyword(raw) {
+	return String(raw ?? '')
+		.replace(/[\r\n]+/g, ' ')
+		.replace(/[[\]()<>"'`|*_#]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 50)
+		.trim();
+}
+
+/**
+ * 検索キーワードから楽天アフィリエイトの検索リンクを組み立てる。
+ * キーワードを取り出せない場合は null を返す（呼び出し側でリンクを諦める）。
+ */
+function buildRakutenAffiliateLink(keyword) {
+	const cleaned = sanitizeSearchKeyword(keyword);
+	if (!cleaned) return null;
+
+	// pc パラメータは「URL エンコードされた楽天市場の検索 URL」なので、
+	// キーワードだけを encodeURIComponent し、URL の記号は %3A / %2F のリテラルとして組む。
+	const pc = `${RAKUTEN_SEARCH_PREFIX}${encodeURIComponent(cleaned)}${RAKUTEN_SEARCH_SUFFIX}`;
+
+	return `https://hb.afl.rakuten.co.jp/ichiba/${RAKUTEN_AFFILIATE_ID}/?pc=${pc}`;
+}
+
+/**
+ * 本文中の AFFILIATE_LINK プレースホルダーを実際の楽天アフィリエイト検索リンクに差し替える。
+ * 差し替えた本数も返し、リンクが1本も入らなかった場合に警告できるようにする。
+ */
+function insertAffiliateLinks(text, fallbackKeyword) {
+	let replaced = 0;
+
+	// キーワードが空だったり記号だけだった場合は記事のキーワードで代替する
+	const resolve = (rawKeyword) => {
+		const keyword = sanitizeSearchKeyword(rawKeyword) || sanitizeSearchKeyword(fallbackKeyword);
+		const link = buildRakutenAffiliateLink(keyword);
+		if (link) replaced++;
+		return { keyword, link };
+	};
+
+	// [ワイヤレスイヤホンを楽天市場で探す](AFFILIATE_LINK:ワイヤレスイヤホン) 形式
+	let result = text.replace(AFFILIATE_MARKDOWN_LINK, (match, label, rawKeyword) => {
+		const { keyword, link } = resolve(rawKeyword);
+		if (!link) return label.trim() || match;
+		return `[${label.trim() || `${keyword}を楽天市場で探す`}](${link})`;
+	});
+
+	// Markdown リンクの形になっていない裸のプレースホルダーが残った場合も拾う
+	result = result.replace(AFFILIATE_BARE_PLACEHOLDER, (_match, rawKeyword) => {
+		const { keyword, link } = resolve(rawKeyword);
+		if (!link) return '';
+		return `[${keyword}を楽天市場で探す](${link})`;
+	});
+
+	return { text: result, replaced };
+}
+
 /** 構造化出力のスキーマ。frontmatter 用の項目と本文を分けて受け取る。 */
 const ARTICLE_SCHEMA = {
 	type: 'object',
@@ -131,7 +206,7 @@ const ARTICLE_SCHEMA = {
 		body: {
 			type: 'string',
 			description:
-				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。各 H2 見出しの直下には ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚挿入する。',
+				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。各 H2 見出しの直下には ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚挿入する。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
 		},
 	},
 	required: ['title', 'description', 'slug', 'heroImage', 'body'],
@@ -152,8 +227,12 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 
 # アフィリエイト記事としての要件
 - 記事冒頭に「※本記事にはアフィリエイト広告（PR）を含みます。」という1行の広告表記を入れる（ステルスマーケティング規制への対応）。
-- 商品へのリンクは [商品名の詳細を見る](AFFILIATE_LINK_1) のようにプレースホルダー（AFFILIATE_LINK_1, AFFILIATE_LINK_2, ...）で記述する。実在の URL は書かない。
-- 各商品の詳細セクションの末尾に、必ずリンクのプレースホルダーを1つ置く。
+- 商品へのリンクは必ず [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書く。URL 部分には実在の URL を書かず、この AFFILIATE_LINK: プレースホルダーだけを使う（スクリプト側で楽天市場の検索リンクに置き換わる）。
+- 検索キーワードには、楽天市場で検索したときにその商品が実際に見つかる日本語の商品名・カテゴリ名を入れる（例: AFFILIATE_LINK:ワイヤレスイヤホン、AFFILIATE_LINK:ゲーミングPC）。
+- 検索キーワードはスペース・記号・改行を含めない20文字以内の日本語にする。複数の語を並べず、最も検索されやすい1語を選ぶ。
+- 実在しない型番をキーワードにしない。商品の類型（例: 完全ワイヤレスイヤホン、ロボット掃除機）を使う。
+- 各商品の詳細セクションの末尾に、必ずこの形式のリンクを1つ置く。セクションごとに、そのセクションの内容に合ったキーワードを選ぶ。
+- リンクテキストは「〇〇を楽天市場で探す」「〇〇の価格をチェックする」のように、遷移先が検索結果ページであることが分かる自然な日本語にする。
 
 # 事実の扱い（重要）
 - 具体的な価格・型番・スペック・ランキング順位・レビュー件数を断定して書かない。確認できない数値は書かない。
@@ -189,7 +268,8 @@ function buildUserPrompt(keyword, today) {
 - title には上記キーワードまたはその自然な言い換えを含めてください。
 - slug はキーワードの意味を英語で表した半角英小文字のスラッグにしてください（ローマ字表記より、意味が伝わる英語を優先）。
 - heroImage には、記事全体のテーマを表す英語キーワードを使った https://loremflickr.com/1200/630/{english_keyword} を設定してください。
-- body は frontmatter を含めず本文の Markdown のみを返し、すべての H2 見出しの直下に ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚入れてください。`;
+- body は frontmatter を含めず本文の Markdown のみを返し、すべての H2 見出しの直下に ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚入れてください。
+- 商品へのリンクは [〇〇を楽天市場で探す](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で商品が見つかる日本語の商品名・カテゴリ名（スペースなし・20文字以内）を入れてください。`;
 }
 
 function parseArgs(argv) {
@@ -349,8 +429,11 @@ function normalizeSlug(raw, fallbackSeed) {
 	return `post-${new Date().toISOString().slice(0, 10)}-${hash(fallbackSeed) % 1000}`;
 }
 
-/** 本文に混ざりうる frontmatter・H1・コードフェンスを取り除く。 */
-function normalizeBody(body) {
+/**
+ * 本文に混ざりうる frontmatter・H1・コードフェンスを取り除き、
+ * 画像 URL とアフィリエイトリンクを正規化する。
+ */
+function normalizeBody(body, fallbackKeyword) {
 	let text = body.replace(/\r\n/g, '\n').trim();
 
 	// 全体がコードフェンスで包まれている場合は外す
@@ -381,10 +464,14 @@ function normalizeBody(body) {
 	});
 	text = text.replace(/<img\b[^>]*>/gi, '');
 
+	// AFFILIATE_LINK プレースホルダーを実際の楽天アフィリエイト検索リンクに差し替える
+	const affiliate = insertAffiliateLinks(text, fallbackKeyword);
+	text = affiliate.text;
+
 	// 除去の結果できた空行の連続をまとめる
 	text = text.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n');
 
-	return `${text.trim()}\n`;
+	return { body: `${text.trim()}\n`, affiliateLinks: affiliate.replaced };
 }
 
 /** YAML のシングルクオート文字列として安全な形にする。 */
@@ -439,7 +526,12 @@ async function main() {
 		);
 	}
 
-	const body = normalizeBody(article.body);
+	const { body, affiliateLinks } = normalizeBody(article.body, options.keyword);
+	if (affiliateLinks === 0) {
+		console.warn(
+			'警告: 本文にアフィリエイトリンクが挿入されませんでした（AFFILIATE_LINK プレースホルダーが見つかりません）。',
+		);
+	}
 
 	// AI が返したアイキャッチ URL を採用し、形式が壊れている場合だけ手元の画像に退避する
 	const heroImage = normalizeImageUrl(article.heroImage, HERO_IMAGE_SIZE);
@@ -464,11 +556,12 @@ async function main() {
 	console.log(`  タイトル: ${article.title}`);
 	console.log(`  本文: 約${body.length}文字`);
 	console.log(`  本文中の画像: ${(body.match(/!\[[^\]]*\]\(/g) ?? []).length}枚`);
+	console.log(`  楽天アフィリエイトリンク: ${affiliateLinks}本`);
 	if (servedBy !== options.model) console.log(`  応答モデル: ${servedBy}（フォールバック）`);
 	if (tokenUsage) {
 		console.log(`  トークン: 入力 ${tokenUsage.input_tokens} / 出力 ${tokenUsage.output_tokens}`);
 	}
-	console.log('  ※ AFFILIATE_LINK_n を実際のアフィリエイトリンクに差し替えてください。');
+	console.log('  ※ リンク先の検索キーワードが妥当か、公開前に確認してください。');
 }
 
 main().catch((error) => {

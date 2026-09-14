@@ -104,7 +104,7 @@ npm run generate -- "おすすめゲーミングPC" --slug gaming-pc-2026
 - 保存先は `src/content/blog/<スラッグ>.md` です。スラッグはモデルが提案した英語表記を半角英小文字に正規化して使います。
 - frontmatter は `src/content.config.ts` のスキーマに合わせて `title` / `description` / `pubDate` / `heroImage` を出力します。`heroImage` は `src/assets/blog-placeholder-*.jpg` から自動で割り当てられます。
 - 本文は「選び方 → 比較表 → 商品ごとの詳細 → よくある質問 → まとめ」の構成で、冒頭に広告表記（PR）が入ります。
-- **商品リンクは `AFFILIATE_LINK_1` のようなプレースホルダーで出力されます。公開前に実際のアフィリエイトリンクへ差し替えてください。**
+- **商品リンクは `[〇〇を楽天市場で探す](AFFILIATE_LINK:検索キーワード)` の形式で生成され、スクリプト側で楽天アフィリエイトの検索リンク（`https://hb.afl.rakuten.co.jp/ichiba/<アフィリエイトID>/?pc=...`）へ自動的に置き換わります。アフィリエイトIDは `scripts/generate-post.js` の `RAKUTEN_AFFILIATE_ID` で定義しています。公開前にリンク先の検索キーワードが妥当か確認してください。**
 - 価格やスペックは断定を避けるよう指示していますが、事実確認は保証されません。公開前に必ず内容を目視で確認してください。
 - 実行するたびに Anthropic API の利用料が発生します。
 

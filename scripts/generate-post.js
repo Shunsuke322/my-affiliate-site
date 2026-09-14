@@ -27,14 +27,14 @@ const projectRoot = path.resolve(here, '..');
 const blogDir = path.join(projectRoot, 'src/content/blog');
 const publicDir = path.join(projectRoot, 'public');
 
-// 記事内画像・アイキャッチ画像に使うフリー画像 API。
-// https://picsum.photos/seed/{english_keyword}/{width}/{height} で、
-// シード値ごとに固定された画像が返る（同じシードなら常に同じ画像）。
-const IMAGE_HOST = 'picsum.photos';
+// 記事内画像・アイキャッチ画像に使う画像生成 API（Pollinations）。
+// https://image.pollinations.ai/prompt/{english_keyword}?width={width}&height={height}&nologo=true
+// で、プロンプト（英語キーワード）に沿った画像が生成される。
+const IMAGE_HOST = 'image.pollinations.ai';
 const BODY_IMAGE_SIZE = { width: 800, height: 450 };
 const HERO_IMAGE_SIZE = { width: 1200, height: 630 };
 
-// AI が妥当な Picsum URL を返さなかった場合に使うフォールバック用のプレースホルダー画像。
+// AI が妥当な画像 URL を返さなかった場合に使うフォールバック用のプレースホルダー画像。
 // Cloudflare Pages で Astro の画像最適化が失敗するため、src/assets/ の相対パスではなく
 // public/ をルートとした絶対パスで参照する。
 const HERO_IMAGES = [
@@ -80,33 +80,34 @@ function pickHeroImage(slug) {
 }
 
 /**
- * Picsum の seed に使うキーワードを半角英小文字・数字・ハイフンだけに整える。
- * カンマ区切りで複数語が来た場合はハイフンで連結し、同じキーワードなら常に同じ
- * シード（＝同じ画像）になるようにする。
+ * 画像生成のプロンプトに使う英語キーワードを整える。
+ * 生成される絵の精度を上げるため、ハイフンやカンマ区切りは半角スペースに開き、
+ * 英小文字・数字・スペースだけの短いフレーズにする。
  */
-function sanitizeImageSeed(raw) {
+function sanitizeImagePrompt(raw) {
 	return String(raw ?? '')
 		.toLowerCase()
-		.split(/[,\s]+/)
-		.map((word) => word.replace(/[^a-z0-9-]+/g, '').replace(/^-+|-+$/g, ''))
+		.replace(/[^a-z0-9]+/g, ' ')
+		.trim()
+		.split(/\s+/)
 		.filter(Boolean)
-		.slice(0, 4)
-		.join('-')
-		.slice(0, 60)
-		.replace(/-+$/g, '');
+		.slice(0, 6)
+		.join(' ')
+		.slice(0, 80)
+		.trim();
 }
 
-/** シード値とサイズから Picsum の画像 URL を組み立てる。 */
-function buildImageUrl(seed, { width, height }) {
-	// seed はパスの1セグメントなので、想定外の文字が残っても URL が壊れないようエンコードする
-	return `https://${IMAGE_HOST}/seed/${encodeURIComponent(seed)}/${width}/${height}`;
+/** プロンプトとサイズから Pollinations の画像 URL を組み立てる。 */
+function buildImageUrl(prompt, { width, height }) {
+	// prompt はパスの1セグメントなので、スペースなどが入っても URL が壊れないようエンコードする
+	return `https://${IMAGE_HOST}/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&nologo=true`;
 }
 
 /**
- * 画像 URL からシード（どの画像になるかを決める英語キーワード）を取り出す。
- * Picsum 以外の URL やローカルパス、シードを取り出せないものは null を返す。
+ * 画像 URL からプロンプト（どんな絵が生成されるかを決める英語キーワード）を取り出す。
+ * Pollinations 以外の URL やローカルパス、プロンプトを取り出せないものは null を返す。
  */
-function extractImageSeed(rawUrl) {
+function extractImagePrompt(rawUrl) {
 	let url;
 	try {
 		url = new URL(String(rawUrl).trim());
@@ -116,7 +117,7 @@ function extractImageSeed(rawUrl) {
 
 	if (url.protocol !== 'https:' || url.hostname !== IMAGE_HOST) return null;
 
-	// パスは /seed/laptop-desk/800/450 の形。
+	// パスは /prompt/laptop%20desk の形。
 	let pathname = url.pathname;
 	try {
 		pathname = decodeURIComponent(pathname);
@@ -125,29 +126,27 @@ function extractImageSeed(rawUrl) {
 	}
 
 	const segments = pathname.split('/').filter(Boolean);
-	const seedIndex = segments.indexOf('seed');
+	const promptIndex = segments.indexOf('prompt');
 
-	// seed/ が付いていない（サイズだけの並び）場合も、
-	// 数字以外の最初のセグメントをシードとして拾う
+	// prompt/ が付いていない場合も、残りのセグメントをまとめてプロンプトとして拾う
 	return (
-		sanitizeImageSeed(
-			seedIndex !== -1
-				? segments[seedIndex + 1]
-				: segments.find((segment) => !/^\d+$/.test(segment)),
+		sanitizeImagePrompt(
+			(promptIndex !== -1 ? segments.slice(promptIndex + 1) : segments).join(' '),
 		) || null
 	);
 }
 
 /**
- * AI が生成した画像 URL を https://picsum.photos/seed/{seed}/{width}/{height} の形に正規化する。
- * シードを取り出せないものは null を返す
- * （存在しない画像を参照するとビルドや表示が壊れるため、呼び出し側で除去・代替する）。
+ * AI が生成した画像 URL を
+ * https://image.pollinations.ai/prompt/{english_keyword}?width={width}&height={height}&nologo=true
+ * の形に正規化する。プロンプトを取り出せないものは null を返す
+ * （画像が表示できないとレイアウトが壊れるため、呼び出し側で除去・代替する）。
  */
 function normalizeImageUrl(rawUrl, size) {
-	const seed = extractImageSeed(rawUrl);
-	if (!seed) return null;
+	const prompt = extractImagePrompt(rawUrl);
+	if (!prompt) return null;
 
-	return buildImageUrl(seed, size);
+	return buildImageUrl(prompt, size);
 }
 
 /**
@@ -231,21 +230,21 @@ const ARTICLE_SCHEMA = {
 		heroImage: {
 			type: 'string',
 			description:
-				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://picsum.photos/seed/{english_keyword}/1200/630 の形式で出力する（例: https://picsum.photos/seed/laptop-desk/1200/630）。',
+				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://image.pollinations.ai/prompt/{english_keyword}?width=1200&height=630&nologo=true の形式で出力する（例: https://image.pollinations.ai/prompt/laptop on wooden desk?width=1200&height=630&nologo=true）。',
 		},
-		imageSeeds: {
+		imagePrompts: {
 			type: 'array',
 			description:
-				'body の H2 見出しの順番に対応する、本文画像用の英語キーワード（シード値）の配列。要素数は H2 見出しの数と一致させる。各要素は半角英小文字とハイフンのみの2〜3語（例: laptop-desk）。',
+				'body の H2 見出しの順番に対応する、本文画像用の英語キーワード（画像生成プロンプト）の配列。要素数は H2 見出しの数と一致させる。各要素は半角英小文字とスペースのみの2〜5語（例: laptop on wooden desk）。',
 			items: { type: 'string' },
 		},
 		body: {
 			type: 'string',
 			description:
-				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。すべての H2 見出しの直下に、空行を挟んで ![日本語のaltテキスト](https://picsum.photos/seed/{english_keyword}/800/450) 形式の画像を必ず1枚入れる（画像のない H2 見出しを作らない）。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
+				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。すべての H2 見出しの直下に、空行を挟んで ![日本語のaltテキスト](https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true) 形式の画像を必ず1枚入れる（画像のない H2 見出しを作らない）。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
 		},
 	},
-	required: ['title', 'description', 'slug', 'heroImage', 'imageSeeds', 'body'],
+	required: ['title', 'description', 'slug', 'heroImage', 'imagePrompts', 'body'],
 	additionalProperties: false,
 };
 
@@ -280,24 +279,24 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 - 本文の H2 見出し（##）は、1つの例外もなく、その直下に画像を1枚だけ置く。画像のない H2 見出しがあってはならない。
 - 並び順は必ず「## 見出し行」→「空行」→「画像行」→「空行」→「本文」とする。画像を本文の途中や見出しより前に置かない。
 - 画像を置くのは H2 見出しの直下だけ。H3 見出し（###）の直下には置かない。
-- 画像は Markdown の画像記法 ![altテキスト](URL) で書く。<img> タグやローカルの画像パス、picsum.photos 以外の URL は使わない。
-- 本文中の画像の URL は必ず https://picsum.photos/seed/{english_keyword}/800/450 の形式にする。サイズはシード値の後ろに置き、クエリ文字列は付けない。
-- {english_keyword} はその見出しの内容に沿った英語キーワードを自分で考えて埋め込む。半角英小文字とハイフンのみで、複数の語はハイフン区切りで2〜3語まで（例: laptop-desk、wireless-earbuds-case）。スペース・日本語・記号・カンマ・アンダースコアは入れない。
-- 見出しごとに異なるキーワードを選び、同じ URL を繰り返さない（シード値が同じだと同じ画像になる）。
+- 画像は Markdown の画像記法 ![altテキスト](URL) で書く。<img> タグやローカルの画像パス、image.pollinations.ai 以外の URL は使わない。
+- 本文中の画像の URL は必ず https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true の形式にする。クエリ文字列（?width=800&height=450&nologo=true）を省略したり書き換えたりしない。
+- {english_keyword} はその見出しの内容に沿った英語キーワード（画像生成 AI へのプロンプト）を自分で考えて埋め込む。半角英小文字とスペースのみで、2〜5語まで（例: laptop on wooden desk、wireless earbuds charging case）。日本語・記号・カンマ・アンダースコアは入れない。
+- 見出しごとに異なるキーワードを選び、同じ URL を繰り返さない（キーワードが同じだと同じような画像になる）。
 - alt テキストには画像の内容を表す日本語の説明を入れる。空にしたり、英語キーワードをそのまま書いたりしない。
 - 次の形をそのまま真似して書く:
   ## 初心者向けノートパソコンの選び方
 
-  ![デスクに置かれたノートパソコンとコーヒー](https://picsum.photos/seed/laptop-desk/800/450)
+  ![デスクに置かれたノートパソコンとコーヒー](https://image.pollinations.ai/prompt/laptop and coffee on wooden desk?width=800&height=450&nologo=true)
 
   ノートパソコンを選ぶときは、まず用途を決めるところから始めます。
-- imageSeeds フィールドには、body に書いた H2 見出しの順番どおりに、各画像で使った {english_keyword} を配列で並べる。要素数は H2 見出しの数と一致させる。
-- frontmatter のアイキャッチ画像（heroImage フィールド）にも、記事全体のテーマを表す英語キーワードを使った https://picsum.photos/seed/{english_keyword}/1200/630 を生成して入れる。本文用とは別に、記事のテーマを最もよく表すキーワードを選ぶ。
+- imagePrompts フィールドには、body に書いた H2 見出しの順番どおりに、各画像で使った {english_keyword} を配列で並べる。要素数は H2 見出しの数と一致させる。
+- frontmatter のアイキャッチ画像（heroImage フィールド）にも、記事全体のテーマを表す英語キーワードを使った https://image.pollinations.ai/prompt/{english_keyword}?width=1200&height=630&nologo=true を生成して入れる。本文用とは別に、記事のテーマを最もよく表すキーワードを選ぶ。
 
 # 書き終えたあとの自己チェック（必須）
-- body に含まれる ## で始まる行をすべて数え、その直下に picsum.photos の画像行があるか1つずつ確認する。
+- body に含まれる ## で始まる行をすべて数え、その直下に image.pollinations.ai の画像行があるか1つずつ確認する。
 - 抜けている見出しがあれば、返答する前に画像行を追記する。
-- imageSeeds の要素数が H2 見出しの数と一致しているか確認する。
+- imagePrompts の要素数が H2 見出しの数と一致しているか確認する。
 
 # 出力してはいけないもの（重要）
 - body に frontmatter（--- で囲まれたメタデータ）は書かない。title・description・slug・heroImage はそれぞれのフィールドで返す。
@@ -316,11 +315,11 @@ function buildUserPrompt(keyword, today) {
 
 - title には上記キーワードまたはその自然な言い換えを含めてください。
 - slug はキーワードの意味を英語で表した半角英小文字のスラッグにしてください（ローマ字表記より、意味が伝わる英語を優先）。
-- heroImage には、記事全体のテーマを表す英語キーワードを使った https://picsum.photos/seed/{english_keyword}/1200/630 を設定してください。
+- heroImage には、記事全体のテーマを表す英語キーワードを使った https://image.pollinations.ai/prompt/{english_keyword}?width=1200&height=630&nologo=true を設定してください。
 - body は frontmatter を含めず本文の Markdown のみを返してください。
-- 画像は必須です。body に出てくるすべての H2 見出し（##）の直下に、空行を挟んで ![日本語のaltテキスト](https://picsum.photos/seed/{english_keyword}/800/450) 形式の画像を必ず1枚ずつ入れ、画像のない H2 見出しを1つも作らないでください。
-- {english_keyword} は見出しごとに変え、半角英小文字とハイフンだけの2〜3語にしてください（例: wireless-earbuds-case）。picsum.photos 以外の画像 URL は使わないでください。
-- imageSeeds には、body の H2 見出しの順番どおりに、各画像で使った {english_keyword} を並べてください。要素数は H2 見出しの数と同じにしてください。
+- 画像は必須です。body に出てくるすべての H2 見出し（##）の直下に、空行を挟んで ![日本語のaltテキスト](https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true) 形式の画像を必ず1枚ずつ入れ、画像のない H2 見出しを1つも作らないでください。
+- {english_keyword} は見出しごとに変え、半角英小文字とスペースだけの2〜5語にしてください（例: wireless earbuds charging case）。image.pollinations.ai 以外の画像 URL は使わないでください。
+- imagePrompts には、body の H2 見出しの順番どおりに、各画像で使った {english_keyword} を並べてください。要素数は H2 見出しの数と同じにしてください。
 - 商品へのリンクは [〇〇を楽天市場で探す](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で商品が見つかる日本語の商品名・カテゴリ名（スペースなし・20文字以内）を入れてください。`;
 }
 
@@ -451,16 +450,16 @@ async function generateArticle({ client, keyword, model, useFallback }) {
 		throw new Error(`モデルの応答を JSON として解析できませんでした:\n${text.slice(0, 500)}`);
 	}
 
-	// imageSeeds は配列なので、文字列必須チェックの対象から外す
+	// imagePrompts は配列なので、文字列必須チェックの対象から外す
 	for (const field of ARTICLE_SCHEMA.required) {
-		if (field === 'imageSeeds') continue;
+		if (field === 'imagePrompts') continue;
 		if (typeof article[field] !== 'string' || article[field].trim() === '') {
 			throw new Error(`生成結果に ${field} が含まれていません`);
 		}
 	}
 
-	// 画像シードは見出し画像の補完にしか使わないため、欠けていても生成は続行する
-	if (!Array.isArray(article.imageSeeds)) article.imageSeeds = [];
+	// 画像プロンプトは見出し画像の補完にしか使わないため、欠けていても生成は続行する
+	if (!Array.isArray(article.imagePrompts)) article.imagePrompts = [];
 
 	return { article, servedBy: message.model, usage: message.usage };
 }
@@ -488,32 +487,32 @@ function normalizeSlug(raw, fallbackSeed) {
 
 /**
  * 本文のすべての H2 見出しの直下に画像が1枚あることを保証する。
- * AI が画像を書き忘れた場合や、picsum 以外の URL だったために除去された場合でも、
+ * AI が画像を書き忘れた場合や、Pollinations 以外の URL だったために除去された場合でも、
  * ここで見出しごとに1枚補う（画像が入るかどうかを AI の出力任せにしない）。
  */
-function ensureHeadingImages(text, { imageSeeds = [], slug }) {
-	const usedSeeds = new Set();
+function ensureHeadingImages(text, { imagePrompts = [], slug }) {
+	const usedPrompts = new Set();
 
-	// 既に本文にある画像のシードを先に登録し、補った画像が同じ絵柄にならないようにする
+	// 既に本文にある画像のプロンプトを先に登録し、補った画像が同じ絵柄にならないようにする
 	for (const [, url] of text.matchAll(/!\[[^\]]*\]\((\S+?)\)/g)) {
-		const seed = extractImageSeed(url);
-		if (seed) usedSeeds.add(seed);
+		const prompt = extractImagePrompt(url);
+		if (prompt) usedPrompts.add(prompt);
 	}
 
-	const seedQueue = imageSeeds.map(sanitizeImageSeed).filter(Boolean);
+	const promptQueue = imagePrompts.map(sanitizeImagePrompt).filter(Boolean);
 	let headings = 0;
 
-	// AI が用意したシードを順に使い、尽きたらスラッグと見出し番号から作る。
-	// 同じシードは同じ画像になるため、既に使われていれば連番でずらす。
-	const takeSeed = () => {
+	// AI が用意したプロンプトを順に使い、尽きたらスラッグと見出し番号から作る。
+	// 同じプロンプトからは同じような画像が出るため、既に使われていれば連番でずらす。
+	const takePrompt = () => {
 		const base =
-			seedQueue.shift() || sanitizeImageSeed(`${slug}-${headings}`) || `section-${headings}`;
+			promptQueue.shift() || sanitizeImagePrompt(`${slug} ${headings}`) || `section ${headings}`;
 
-		let seed = base;
-		for (let suffix = 2; usedSeeds.has(seed); suffix++) seed = `${base}-${suffix}`;
-		usedSeeds.add(seed);
+		let prompt = base;
+		for (let suffix = 2; usedPrompts.has(prompt); suffix++) prompt = `${base} ${suffix}`;
+		usedPrompts.add(prompt);
 
-		return seed;
+		return prompt;
 	};
 
 	const lines = text.split('\n');
@@ -547,7 +546,7 @@ function ensureHeadingImages(text, { imageSeeds = [], slug }) {
 		const alt = label ? `${label}のイメージ写真` : 'この見出しの内容をイメージした写真';
 
 		// 前後に空行を入れて、独立した段落として画像が描画されるようにする
-		output.push('', `![${alt}](${buildImageUrl(takeSeed(), BODY_IMAGE_SIZE)})`, '');
+		output.push('', `![${alt}](${buildImageUrl(takePrompt(), BODY_IMAGE_SIZE)})`, '');
 		inserted++;
 	}
 
@@ -559,7 +558,7 @@ function ensureHeadingImages(text, { imageSeeds = [], slug }) {
  * 画像 URL とアフィリエイトリンクを正規化したうえで、
  * すべての H2 見出しの直下に画像が入っている状態にする。
  */
-function normalizeBody(body, { fallbackKeyword, imageSeeds, slug }) {
+function normalizeBody(body, { fallbackKeyword, imagePrompts, slug }) {
 	let text = body.replace(/\r\n/g, '\n').trim();
 
 	// 全体がコードフェンスで包まれている場合は外す
@@ -581,10 +580,12 @@ function normalizeBody(body, { fallbackKeyword, imageSeeds, slug }) {
 	// frontmatter 外に漏れた heroImage 行を除去
 	text = text.replace(/^[ \t]*heroImage[ \t]*:.*\n?/gim, '');
 
-	// 画像は Picsum のものだけ残し、サイズを 800x450 に揃える。
+	// 画像は Pollinations のものだけ残し、サイズを 800x450 に揃える。
 	// それ以外（ローカルパスや他ドメイン）は存在しない画像を参照してビルドや表示が壊れるため、
 	// ここでいったん除去し、後続の ensureHeadingImages で見出しごとに貼り直す。
-	text = text.replace(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g, (_match, alt, url) => {
+	// プロンプトに素のスペースが入った URL も拾えるよう、URL 部分は ) 以外を許容して取り込み、
+	// normalizeImageUrl で URL エンコードし直す（Markdown はスペース入り URL を解釈できない）。
+	text = text.replace(/!\[([^\]]*)\]\(\s*([^)]+?)(?:\s+"[^"]*")?\s*\)/g, (_match, alt, url) => {
 		const normalized = normalizeImageUrl(url, BODY_IMAGE_SIZE);
 		if (!normalized) return '';
 		return `![${alt.trim() || 'この見出しの内容をイメージした写真'}](${normalized})`;
@@ -593,7 +594,7 @@ function normalizeBody(body, { fallbackKeyword, imageSeeds, slug }) {
 
 	// すべての H2 見出しの直下に画像があることを保証する
 	// （AI が入れ忘れた分・上で除去された分をここで補う）
-	const images = ensureHeadingImages(text, { imageSeeds, slug });
+	const images = ensureHeadingImages(text, { imagePrompts, slug });
 	text = images.text;
 
 	// AFFILIATE_LINK プレースホルダーを実際の楽天アフィリエイト検索リンクに差し替える
@@ -665,7 +666,7 @@ async function main() {
 
 	const { body, affiliateLinks, headings, insertedImages } = normalizeBody(article.body, {
 		fallbackKeyword: options.keyword,
-		imageSeeds: article.imageSeeds,
+		imagePrompts: article.imagePrompts,
 		slug,
 	});
 	if (affiliateLinks === 0) {

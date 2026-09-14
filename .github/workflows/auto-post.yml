@@ -1,0 +1,75 @@
+name: 自動記事生成
+
+on:
+  # JST 08:00（= UTC 23:00 前日）に毎日実行
+  schedule:
+    - cron: '0 23 * * *'
+  # 手動実行。キーワードを指定しない場合は日替わりリストから選ぶ
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: '記事のキーワード（未指定なら日替わりリストから自動選択）'
+        required: false
+        type: string
+
+permissions:
+  # GITHUB_TOKEN で push するために必要
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      - name: Node.js をセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 依存パッケージをインストール
+        run: npm install
+
+      - name: キーワードを決定
+        id: keyword
+        env:
+          INPUT_KEYWORD: ${{ inputs.keyword }}
+          # 日替わりで使うキーワード（1行1キーワード）。自由に追加・変更してよい
+          KEYWORDS: |
+            おすすめゲーミングPC
+            おすすめワイヤレスイヤホン
+            おすすめロボット掃除機
+            おすすめ電動歯ブラシ
+            おすすめコーヒーメーカー
+            おすすめモバイルバッテリー
+            おすすめ空気清浄機
+        run: |
+          if [ -n "$INPUT_KEYWORD" ]; then
+            keyword="$INPUT_KEYWORD"
+          else
+            # 通算日数をリスト件数で割った余りで、日替わりに1つ選ぶ
+            mapfile -t list < <(printf '%s\n' "$KEYWORDS" | sed '/^[[:space:]]*$/d')
+            index=$(( $(date -u +%s) / 86400 % ${#list[@]} ))
+            keyword="${list[$index]}"
+          fi
+          echo "記事のキーワード: $keyword"
+          echo "keyword=$keyword" >> "$GITHUB_OUTPUT"
+
+      - name: 記事を生成
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node scripts/generate-post.js "${{ steps.keyword.outputs.keyword }}"
+
+      - name: 変更をコミットしてプッシュ
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "変更がないためコミットをスキップします"
+            exit 0
+          fi
+          git add -A
+          git commit -m "記事を自動生成: ${{ steps.keyword.outputs.keyword }}"
+          git push

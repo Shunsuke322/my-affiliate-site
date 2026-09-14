@@ -25,31 +25,33 @@ const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, '..');
 const blogDir = path.join(projectRoot, 'src/content/blog');
+const publicDir = path.join(projectRoot, 'public');
 
-// src/assets/ に同梱されているプレースホルダー画像（記事ごとに一枚割り当てる）。
-// heroImage はこのリストの値だけを使う。モデルには一切生成させない。
+// public/ に置いたプレースホルダー画像（記事ごとに一枚割り当てる）。
+// Cloudflare Pages で Astro の画像最適化が失敗するため、src/assets/ の相対パスではなく
+// public/ をルートとした絶対パスで参照する。heroImage はこのリストの値だけを使う。
 const HERO_IMAGES = [
-	'../../assets/blog-placeholder-1.jpg',
-	'../../assets/blog-placeholder-2.jpg',
-	'../../assets/blog-placeholder-3.jpg',
-	'../../assets/blog-placeholder-4.jpg',
-	'../../assets/blog-placeholder-5.jpg',
+	'/blog-placeholder-1.jpg',
+	'/blog-placeholder-2.jpg',
+	'/blog-placeholder-3.jpg',
+	'/blog-placeholder-4.jpg',
+	'/blog-placeholder-5.jpg',
 ];
 
 /**
  * slug から heroImage を決定する。
  * 実ファイルの存在を確認し、存在するものだけを候補にする
- * （存在しないパスを frontmatter に書くと Astro のビルドが落ちるため）。
+ * （存在しないパスを frontmatter に書くと画像が 404 になるため）。
  */
 function pickHeroImage(slug) {
-	// heroImage のパスは src/content/blog/<slug>.md からの相対パス
+	// heroImage のパスは public/ をルートとしたサイト絶対パス
 	const available = HERO_IMAGES.filter((image) =>
-		fs.existsSync(path.resolve(blogDir, image)),
+		fs.existsSync(path.join(publicDir, image)),
 	);
 
 	if (available.length === 0) {
 		throw new Error(
-			`プレースホルダー画像が見つかりません（${path.join(projectRoot, 'src/assets')} を確認してください）`,
+			`プレースホルダー画像が見つかりません（${publicDir} を確認してください）`,
 		);
 	}
 

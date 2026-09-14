@@ -2,7 +2,7 @@
 title: '初心者向けおすすめノートパソコンの選び方と比較'
 description: 'パソコン初心者が失敗しないノートパソコンの選び方を、CPU・メモリ・画面サイズなどの基準から解説。用途別のおすすめタイプを比較表で整理し、よくある疑問にも答えます。'
 pubDate: '2026-09-11'
-heroImage: '../../assets/blog-placeholder-1.jpg'
+heroImage: '/blog-placeholder-1.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

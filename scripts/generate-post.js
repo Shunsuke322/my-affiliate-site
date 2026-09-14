@@ -27,9 +27,15 @@ const projectRoot = path.resolve(here, '..');
 const blogDir = path.join(projectRoot, 'src/content/blog');
 const publicDir = path.join(projectRoot, 'public');
 
-// public/ に置いたプレースホルダー画像（記事ごとに一枚割り当てる）。
+// 記事内画像・アイキャッチ画像に使うフリー画像 API。
+// https://loremflickr.com/{width}/{height}/{english_keyword} でキーワードに沿った画像が返る。
+const IMAGE_HOST = 'loremflickr.com';
+const BODY_IMAGE_SIZE = { width: 800, height: 450 };
+const HERO_IMAGE_SIZE = { width: 1200, height: 630 };
+
+// AI が妥当な LoremFlickr URL を返さなかった場合に使うフォールバック用のプレースホルダー画像。
 // Cloudflare Pages で Astro の画像最適化が失敗するため、src/assets/ の相対パスではなく
-// public/ をルートとした絶対パスで参照する。heroImage はこのリストの値だけを使う。
+// public/ をルートとした絶対パスで参照する。
 const HERO_IMAGES = [
 	'/blog-placeholder-1.jpg',
 	'/blog-placeholder-2.jpg',
@@ -39,7 +45,7 @@ const HERO_IMAGES = [
 ];
 
 /**
- * slug から heroImage を決定する。
+ * slug からフォールバック用の heroImage を決定する。
  * 実ファイルの存在を確認し、存在するものだけを候補にする
  * （存在しないパスを frontmatter に書くと画像が 404 になるため）。
  */
@@ -56,6 +62,48 @@ function pickHeroImage(slug) {
 	}
 
 	return available[hash(slug) % available.length];
+}
+
+/** LoremFlickr のキーワード部分を半角英小文字・数字・ハイフン・カンマだけに整える。 */
+function sanitizeImageKeywords(raw) {
+	return String(raw ?? '')
+		.toLowerCase()
+		.split(',')
+		.map((word) => word.replace(/[^a-z0-9-]+/g, ''))
+		.filter(Boolean)
+		.slice(0, 4)
+		.join(',');
+}
+
+/**
+ * AI が生成した画像 URL を https://loremflickr.com/{width}/{height}/{keywords} の形に正規化する。
+ * LoremFlickr 以外の URL やローカルパス、キーワードを取り出せないものは null を返す
+ * （存在しない画像を参照するとビルドや表示が壊れるため、呼び出し側で除去・代替する）。
+ */
+function normalizeImageUrl(rawUrl, { width, height }) {
+	let url;
+	try {
+		url = new URL(String(rawUrl).trim());
+	} catch {
+		return null;
+	}
+
+	if (url.protocol !== 'https:' || url.hostname !== IMAGE_HOST) return null;
+
+	// パスは /800/450/laptop,desk の形。数字のセグメント（サイズ）を飛ばした先がキーワード。
+	let pathname = url.pathname;
+	try {
+		pathname = decodeURIComponent(pathname);
+	} catch {
+		// 不正なエスケープが含まれる場合は素の pathname のまま扱う
+	}
+
+	const keywords = sanitizeImageKeywords(
+		pathname.split('/').find((segment) => segment && !/^\d+$/.test(segment)),
+	);
+	if (!keywords) return null;
+
+	return `https://${IMAGE_HOST}/${width}/${height}/${keywords}`;
 }
 
 /** 構造化出力のスキーマ。frontmatter 用の項目と本文を分けて受け取る。 */
@@ -75,13 +123,18 @@ const ARTICLE_SCHEMA = {
 			description:
 				'ファイル名に使う英小文字のスラッグ。半角英数字とハイフンのみ、3〜60文字（例: recommended-gaming-pc）。',
 		},
+		heroImage: {
+			type: 'string',
+			description:
+				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://loremflickr.com/1200/630/{english_keyword} の形式で出力する（例: https://loremflickr.com/1200/630/laptop,desk）。',
+		},
 		body: {
 			type: 'string',
 			description:
-				'記事本文の Markdown。frontmatter・H1 見出し・画像は含めない（H2 から始める）。heroImage などの画像パスは書かない。',
+				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。各 H2 見出しの直下には ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚挿入する。',
 		},
 	},
-	required: ['title', 'description', 'slug', 'body'],
+	required: ['title', 'description', 'slug', 'heroImage', 'body'],
 	additionalProperties: false,
 };
 
@@ -108,10 +161,19 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 - 実在しない型番や製品名を作らない。判断に迷う場合は「エントリーモデル」「ミドルレンジモデル」のような類型で書く。
 - 医療・健康・金融など断定が危険な領域では、専門家への相談を促す一文を添える。
 
+# 画像の挿入（重要）
+- 本文のすべての H2 見出し（##）の直下に、その見出しの内容に関連した画像を1枚だけ挿入する。見出し行の次に空行を1行入れ、その次の行に画像を置き、さらに空行を挟んで本文を続ける。
+- 画像は Markdown の画像記法 ![altテキスト](URL) で書く。<img> タグやローカルの画像パス、loremflickr.com 以外の URL は使わない。
+- 本文中の画像の URL は必ず https://loremflickr.com/800/450/{english_keyword} の形式にする。
+- {english_keyword} はその見出しの内容に沿った英語キーワードを自分で考えて埋め込む。半角英小文字のみで、複数指定する場合は laptop,gadget,desk のようにカンマ区切りで2〜3語まで。スペース・日本語・記号は入れない。
+- 見出しごとに異なるキーワードを選び、同じ URL を繰り返さない。
+- alt テキストには画像の内容を表す日本語の説明を入れる。空にしたり、英語キーワードをそのまま書いたりしない。
+  例: ![デスクに置かれたノートパソコンとコーヒー](https://loremflickr.com/800/450/laptop,desk)
+- frontmatter のアイキャッチ画像（heroImage フィールド）にも、記事全体のテーマを表す英語キーワードを使った https://loremflickr.com/1200/630/{english_keyword} を生成して入れる。本文用とは別に、記事のテーマを最もよく表すキーワードを選ぶ。
+
 # 出力してはいけないもの（重要）
-- frontmatter（--- で囲まれたメタデータ）は書かない。title・description・pubDate・heroImage はスクリプト側で付与する。
-- heroImage や画像のパス・ファイル名を書かない。存在しない画像を参照するとビルドが失敗する。
-- 本文に Markdown の画像記法（![...](...)）や <img> タグを入れない。
+- body に frontmatter（--- で囲まれたメタデータ）は書かない。title・description・slug・heroImage はそれぞれのフィールドで返す。
+- body に H1 見出しは書かない。
 
 # 文体
 - 「です・ます」調。1文は60文字程度まで。
@@ -126,7 +188,8 @@ function buildUserPrompt(keyword, today) {
 
 - title には上記キーワードまたはその自然な言い換えを含めてください。
 - slug はキーワードの意味を英語で表した半角英小文字のスラッグにしてください（ローマ字表記より、意味が伝わる英語を優先）。
-- body は frontmatter（heroImage を含む）や画像記法を含めず、本文の Markdown のみを返してください。`;
+- heroImage には、記事全体のテーマを表す英語キーワードを使った https://loremflickr.com/1200/630/{english_keyword} を設定してください。
+- body は frontmatter を含めず本文の Markdown のみを返し、すべての H2 見出しの直下に ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚入れてください。`;
 }
 
 function parseArgs(argv) {
@@ -309,8 +372,13 @@ function normalizeBody(body) {
 	// frontmatter 外に漏れた heroImage 行を除去
 	text = text.replace(/^[ \t]*heroImage[ \t]*:.*\n?/gim, '');
 
-	// モデルが作った画像参照を除去（存在しないパスを参照するとビルドが落ちる）
-	text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+	// 画像は LoremFlickr のものだけ残し、サイズを 800x450 に揃える。
+	// それ以外（ローカルパスや他ドメイン）は存在しない画像を参照してビルドや表示が壊れるため除去する。
+	text = text.replace(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g, (_match, alt, url) => {
+		const normalized = normalizeImageUrl(url, BODY_IMAGE_SIZE);
+		if (!normalized) return '';
+		return `![${alt.trim() || 'この見出しの内容をイメージした写真'}](${normalized})`;
+	});
 	text = text.replace(/<img\b[^>]*>/gi, '');
 
 	// 除去の結果できた空行の連続をまとめる
@@ -372,12 +440,21 @@ async function main() {
 	}
 
 	const body = normalizeBody(article.body);
+
+	// AI が返したアイキャッチ URL を採用し、形式が壊れている場合だけ手元の画像に退避する
+	const heroImage = normalizeImageUrl(article.heroImage, HERO_IMAGE_SIZE);
+	if (!heroImage) {
+		console.warn(
+			`警告: heroImage が LoremFlickr の URL として解釈できませんでした（${article.heroImage}）。プレースホルダー画像を使います。`,
+		);
+	}
+
 	const contents =
 		buildFrontmatter({
 			title: article.title,
 			description: article.description,
 			pubDate: new Date().toISOString().slice(0, 10),
-			heroImage: pickHeroImage(slug),
+			heroImage: heroImage ?? pickHeroImage(slug),
 		}) + body;
 
 	fs.mkdirSync(blogDir, { recursive: true });
@@ -386,6 +463,7 @@ async function main() {
 	console.log(`\n生成しました: ${path.relative(projectRoot, filePath)}`);
 	console.log(`  タイトル: ${article.title}`);
 	console.log(`  本文: 約${body.length}文字`);
+	console.log(`  本文中の画像: ${(body.match(/!\[[^\]]*\]\(/g) ?? []).length}枚`);
 	if (servedBy !== options.model) console.log(`  応答モデル: ${servedBy}（フォールバック）`);
 	if (tokenUsage) {
 		console.log(`  トークン: 入力 ${tokenUsage.input_tokens} / 出力 ${tokenUsage.output_tokens}`);

@@ -7,6 +7,7 @@
 :root {
 	--accent: #2337ff;
 	--accent-dark: #000d8a;
+	--accent-soft: 35, 55, 255;
 	--black: 15, 18, 25;
 	--gray: 96, 115, 159;
 	--gray-light: 229, 233, 240;
@@ -15,6 +16,10 @@
 	--box-shadow:
 		0 2px 6px rgba(var(--gray), 25%), 0 8px 24px rgba(var(--gray), 33%),
 		0 16px 32px rgba(var(--gray), 33%);
+	/* 楽天アフィリエイトのボタン用（楽天のブランドカラーに寄せた赤） */
+	--rakuten: 191, 0, 0;
+	--rakuten-bright: 224, 16, 16;
+	--rakuten-dark: 138, 0, 0;
 }
 body {
 	font-family: var(--font-atkinson);
@@ -26,8 +31,8 @@ body {
 	word-wrap: break-word;
 	overflow-wrap: break-word;
 	color: rgb(var(--gray-dark));
-	font-size: 20px;
-	line-height: 1.7;
+	font-size: 18px;
+	line-height: 1.8;
 }
 main {
 	width: 720px;
@@ -73,9 +78,6 @@ a:hover {
 p {
 	margin-bottom: 1em;
 }
-.prose p {
-	margin-bottom: 2em;
-}
 textarea {
 	width: 100%;
 	font-size: 16px;
@@ -115,7 +117,7 @@ hr {
 }
 @media (max-width: 720px) {
 	body {
-		font-size: 18px;
+		font-size: 17px;
 	}
 	main {
 		padding: 1em;
@@ -138,4 +140,206 @@ hr {
 	clip-path: inset(50%);
 	/* added line to stop words getting smushed together (as they go onto separate lines and some screen readers do not understand line feeds as a space */
 	white-space: nowrap;
+}
+
+/* ==================================================================
+   ブログ記事本文（Markdown から生成される部分）
+   ------------------------------------------------------------------
+   本文は BlogPost.astro の <slot /> に流し込まれるため、Astro の
+   スコープ付きスタイルでは届かない。記事本文の装飾はここに置く。
+   ================================================================== */
+
+/* --- 本文テキスト：行間と段落間の余白を十分に取って窮屈さを解消する --- */
+.prose {
+	line-height: 1.8;
+	letter-spacing: 0.02em;
+}
+.prose p {
+	margin: 0 0 1.75em;
+	line-height: 1.8;
+}
+.prose li {
+	line-height: 1.8;
+}
+
+/* --- 見出し：左のアクセント線／下線でどこが見出しか一目で分かるようにする --- */
+.prose h2 {
+	margin: 3em 0 1.2em;
+	padding: 0.15em 0 0.15em 0.7em;
+	border-left: 8px solid var(--accent);
+	font-size: 1.6em;
+	line-height: 1.45;
+}
+.prose h3 {
+	margin: 2.5em 0 1em;
+	padding: 0 0 0.4em;
+	border-bottom: 2px solid rgba(var(--accent-soft), 0.35);
+	font-size: 1.25em;
+	line-height: 1.55;
+}
+.prose h4 {
+	margin: 2em 0 0.8em;
+	font-size: 1.1em;
+	line-height: 1.6;
+}
+/* --- 本文画像：角丸・中央配置・スマホでもはみ出さないレスポンシブ --- */
+.prose img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	margin: 2.25em auto;
+	border-radius: 8px;
+	box-shadow: 0 2px 10px rgba(var(--gray), 22%);
+}
+/* 見出し直下の画像は、見出しとの間隔を詰めて一つの塊として見せる */
+.prose h2 + p > img:only-child,
+.prose h3 + p > img:only-child {
+	margin-top: 1.5em;
+}
+/* Markdown の画像は段落で包まれるため、二重の余白にならないようにする */
+.prose p:has(> img:only-child) {
+	margin: 0;
+}
+
+/* --- 楽天アフィリエイトリンク：クリックしたくなるボタン風に自動変換する --- */
+/* 段落の中身がリンクだけのときは、横幅のあるボタンとして見せる */
+.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child {
+	display: block;
+	max-width: 28em;
+	margin: 2.25em auto;
+	padding: 0.95em 1.6em;
+	border-radius: 999px;
+	background-image: linear-gradient(180deg, rgb(var(--rakuten-bright)), rgb(var(--rakuten)));
+	box-shadow:
+		0 4px 0 rgb(var(--rakuten-dark)),
+		0 8px 18px rgba(var(--rakuten), 28%);
+	color: #fff;
+	font-weight: 700;
+	font-size: 1.05em;
+	line-height: 1.5;
+	text-align: center;
+	text-decoration: none;
+	transition:
+		transform 0.15s ease,
+		box-shadow 0.15s ease,
+		filter 0.15s ease;
+}
+.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child::after {
+	content: ' ›';
+	font-weight: 700;
+}
+.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child:hover,
+.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child:focus-visible {
+	color: #fff;
+	transform: translateY(2px);
+	box-shadow:
+		0 2px 0 rgb(var(--rakuten-dark)),
+		0 4px 10px rgba(var(--rakuten), 32%);
+	filter: brightness(1.06);
+}
+.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child:active {
+	transform: translateY(4px);
+	box-shadow: 0 0 0 rgb(var(--rakuten-dark));
+}
+/* 文章の途中に置かれたリンクは、行の流れを壊さない小さめのボタンにする */
+.prose a[href*='hb.afl.rakuten.co.jp'] {
+	display: inline-block;
+	padding: 0.15em 0.7em;
+	border-radius: 999px;
+	background-color: rgb(var(--rakuten));
+	color: #fff;
+	font-weight: 700;
+	text-decoration: none;
+}
+.prose a[href*='hb.afl.rakuten.co.jp']:hover {
+	color: #fff;
+	background-color: rgb(var(--rakuten-bright));
+}
+@media (prefers-reduced-motion: reduce) {
+	.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child {
+		transition: none;
+	}
+	.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child:hover,
+	.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child:focus-visible,
+	.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child:active {
+		transform: none;
+	}
+}
+
+/* --- 比較表：罫線とストライプで読みやすくし、スマホでは横スクロールさせる --- */
+.prose table {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+	overflow-x: auto;
+	margin: 2em 0;
+	border-collapse: collapse;
+	font-size: 0.92em;
+	line-height: 1.6;
+}
+.prose th,
+.prose td {
+	padding: 0.7em 0.9em;
+	border: 1px solid rgb(var(--gray-light));
+	text-align: left;
+	vertical-align: top;
+}
+.prose thead th {
+	background-color: rgba(var(--gray-light), 75%);
+	white-space: nowrap;
+}
+.prose tbody tr:nth-child(even) {
+	background-color: rgba(var(--gray-light), 32%);
+}
+
+/* --- リスト・引用・区切り線 --- */
+.prose ul,
+.prose ol {
+	margin: 0 0 1.75em;
+	padding-left: 1.4em;
+}
+.prose li {
+	margin-bottom: 0.6em;
+}
+.prose li::marker {
+	color: var(--accent);
+}
+.prose blockquote {
+	margin: 2em 0;
+	padding: 1.1em 1.3em;
+	border-left: 6px solid rgba(var(--gray), 45%);
+	border-radius: 0 8px 8px 0;
+	background-color: rgba(var(--gray-light), 45%);
+	font-size: 1em;
+}
+.prose hr {
+	margin: 3em 0;
+}
+
+/* --- 強調：本文を流し読みしても要点が拾えるようにする --- */
+.prose strong {
+	background-image: linear-gradient(transparent 62%, rgba(var(--accent-soft), 16%) 62%);
+	font-weight: 700;
+}
+
+@media (max-width: 720px) {
+	.prose h2 {
+		margin-top: 2.4em;
+		padding-left: 0.6em;
+		border-left-width: 6px;
+		font-size: 1.4em;
+	}
+	.prose h3 {
+		font-size: 1.15em;
+	}
+	.prose p {
+		margin-bottom: 1.6em;
+	}
+	.prose img {
+		margin: 1.8em auto;
+	}
+	.prose p > a[href*='hb.afl.rakuten.co.jp']:only-child {
+		max-width: 100%;
+		margin: 2em 0;
+	}
 }

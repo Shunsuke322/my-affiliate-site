@@ -24,32 +24,51 @@ const { title, description, pubDate, updatedDate, heroImage } = Astro.props;
 			}
 			.hero-image img {
 				display: block;
+				width: 100%;
+				max-width: 1020px;
+				height: auto;
+				max-height: 420px;
 				margin: 0 auto;
+				object-fit: cover;
 				border-radius: 12px;
 				box-shadow: var(--box-shadow);
 			}
+			/* 記事本文（Markdown）の装飾は global.css の .prose にまとめている。
+			Astro のスコープ付きスタイルは <slot /> に流し込まれた本文に届かないため。 */
 			.prose {
 				width: 720px;
 				max-width: calc(100% - 2em);
 				margin: auto;
-				padding: 1em;
+				padding: 1em 0 3em;
 				color: rgb(var(--gray-dark));
 			}
 			.title {
-				margin-bottom: 1em;
-				padding: 1em 0;
+				margin-bottom: 2em;
+				padding: 1.5em 0 1em;
 				text-align: center;
-				line-height: 1;
 			}
 			.title h1 {
-				margin: 0 0 0.5em 0;
+				margin: 0 0 0.4em 0;
+				font-size: clamp(1.7rem, 4.6vw, 2.4rem);
+				line-height: 1.4;
 			}
 			.date {
 				margin-bottom: 0.5em;
 				color: rgb(var(--gray));
+				font-size: 0.9em;
 			}
 			.last-updated-on {
 				font-style: italic;
+			}
+			@media (max-width: 720px) {
+				.hero-image img {
+					max-height: 240px;
+					border-radius: 8px;
+				}
+				.title {
+					margin-bottom: 1.5em;
+					padding: 1.2em 0 0.8em;
+				}
 			}
 		</style>
 	</head>

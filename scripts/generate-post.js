@@ -103,11 +103,10 @@ function buildImageUrl(seed, { width, height }) {
 }
 
 /**
- * AI が生成した画像 URL を https://picsum.photos/seed/{seed}/{width}/{height} の形に正規化する。
- * Picsum 以外の URL やローカルパス、シードを取り出せないものは null を返す
- * （存在しない画像を参照するとビルドや表示が壊れるため、呼び出し側で除去・代替する）。
+ * 画像 URL からシード（どの画像になるかを決める英語キーワード）を取り出す。
+ * Picsum 以外の URL やローカルパス、シードを取り出せないものは null を返す。
  */
-function normalizeImageUrl(rawUrl, size) {
+function extractImageSeed(rawUrl) {
 	let url;
 	try {
 		url = new URL(String(rawUrl).trim());
@@ -128,13 +127,24 @@ function normalizeImageUrl(rawUrl, size) {
 	const segments = pathname.split('/').filter(Boolean);
 	const seedIndex = segments.indexOf('seed');
 
-	// seed/ が付いていない（サイズだけ、または旧 LoremFlickr 風の並び）場合も、
+	// seed/ が付いていない（サイズだけの並び）場合も、
 	// 数字以外の最初のセグメントをシードとして拾う
-	const seed = sanitizeImageSeed(
-		seedIndex !== -1
-			? segments[seedIndex + 1]
-			: segments.find((segment) => !/^\d+$/.test(segment)),
+	return (
+		sanitizeImageSeed(
+			seedIndex !== -1
+				? segments[seedIndex + 1]
+				: segments.find((segment) => !/^\d+$/.test(segment)),
+		) || null
 	);
+}
+
+/**
+ * AI が生成した画像 URL を https://picsum.photos/seed/{seed}/{width}/{height} の形に正規化する。
+ * シードを取り出せないものは null を返す
+ * （存在しない画像を参照するとビルドや表示が壊れるため、呼び出し側で除去・代替する）。
+ */
+function normalizeImageUrl(rawUrl, size) {
+	const seed = extractImageSeed(rawUrl);
 	if (!seed) return null;
 
 	return buildImageUrl(seed, size);
@@ -223,13 +233,19 @@ const ARTICLE_SCHEMA = {
 			description:
 				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://picsum.photos/seed/{english_keyword}/1200/630 の形式で出力する（例: https://picsum.photos/seed/laptop-desk/1200/630）。',
 		},
+		imageSeeds: {
+			type: 'array',
+			description:
+				'body の H2 見出しの順番に対応する、本文画像用の英語キーワード（シード値）の配列。要素数は H2 見出しの数と一致させる。各要素は半角英小文字とハイフンのみの2〜3語（例: laptop-desk）。',
+			items: { type: 'string' },
+		},
 		body: {
 			type: 'string',
 			description:
-				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。各 H2 見出しの直下には ![日本語のaltテキスト](https://picsum.photos/seed/{english_keyword}/800/450) 形式の画像を1枚挿入する。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
+				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。すべての H2 見出しの直下に、空行を挟んで ![日本語のaltテキスト](https://picsum.photos/seed/{english_keyword}/800/450) 形式の画像を必ず1枚入れる（画像のない H2 見出しを作らない）。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
 		},
 	},
-	required: ['title', 'description', 'slug', 'heroImage', 'body'],
+	required: ['title', 'description', 'slug', 'heroImage', 'imageSeeds', 'body'],
 	additionalProperties: false,
 };
 
@@ -260,15 +276,28 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 - 実在しない型番や製品名を作らない。判断に迷う場合は「エントリーモデル」「ミドルレンジモデル」のような類型で書く。
 - 医療・健康・金融など断定が危険な領域では、専門家への相談を促す一文を添える。
 
-# 画像の挿入（重要）
-- 本文のすべての H2 見出し（##）の直下に、その見出しの内容に関連した画像を1枚だけ挿入する。見出し行の次に空行を1行入れ、その次の行に画像を置き、さらに空行を挟んで本文を続ける。
+# 画像の挿入（絶対に守る）
+- 本文の H2 見出し（##）は、1つの例外もなく、その直下に画像を1枚だけ置く。画像のない H2 見出しがあってはならない。
+- 並び順は必ず「## 見出し行」→「空行」→「画像行」→「空行」→「本文」とする。画像を本文の途中や見出しより前に置かない。
+- 画像を置くのは H2 見出しの直下だけ。H3 見出し（###）の直下には置かない。
 - 画像は Markdown の画像記法 ![altテキスト](URL) で書く。<img> タグやローカルの画像パス、picsum.photos 以外の URL は使わない。
-- 本文中の画像の URL は必ず https://picsum.photos/seed/{english_keyword}/800/450 の形式にする。サイズはシード値の後ろに置く。
-- {english_keyword} はその見出しの内容に沿った英語キーワードを自分で考えて埋め込む。半角英小文字のみで、複数の語を並べる場合は laptop-gadget-desk のようにハイフン区切りで2〜3語まで。スペース・日本語・記号・カンマは入れない。
+- 本文中の画像の URL は必ず https://picsum.photos/seed/{english_keyword}/800/450 の形式にする。サイズはシード値の後ろに置き、クエリ文字列は付けない。
+- {english_keyword} はその見出しの内容に沿った英語キーワードを自分で考えて埋め込む。半角英小文字とハイフンのみで、複数の語はハイフン区切りで2〜3語まで（例: laptop-desk、wireless-earbuds-case）。スペース・日本語・記号・カンマ・アンダースコアは入れない。
 - 見出しごとに異なるキーワードを選び、同じ URL を繰り返さない（シード値が同じだと同じ画像になる）。
 - alt テキストには画像の内容を表す日本語の説明を入れる。空にしたり、英語キーワードをそのまま書いたりしない。
-  例: ![デスクに置かれたノートパソコンとコーヒー](https://picsum.photos/seed/laptop-desk/800/450)
+- 次の形をそのまま真似して書く:
+  ## 初心者向けノートパソコンの選び方
+
+  ![デスクに置かれたノートパソコンとコーヒー](https://picsum.photos/seed/laptop-desk/800/450)
+
+  ノートパソコンを選ぶときは、まず用途を決めるところから始めます。
+- imageSeeds フィールドには、body に書いた H2 見出しの順番どおりに、各画像で使った {english_keyword} を配列で並べる。要素数は H2 見出しの数と一致させる。
 - frontmatter のアイキャッチ画像（heroImage フィールド）にも、記事全体のテーマを表す英語キーワードを使った https://picsum.photos/seed/{english_keyword}/1200/630 を生成して入れる。本文用とは別に、記事のテーマを最もよく表すキーワードを選ぶ。
+
+# 書き終えたあとの自己チェック（必須）
+- body に含まれる ## で始まる行をすべて数え、その直下に picsum.photos の画像行があるか1つずつ確認する。
+- 抜けている見出しがあれば、返答する前に画像行を追記する。
+- imageSeeds の要素数が H2 見出しの数と一致しているか確認する。
 
 # 出力してはいけないもの（重要）
 - body に frontmatter（--- で囲まれたメタデータ）は書かない。title・description・slug・heroImage はそれぞれのフィールドで返す。
@@ -287,8 +316,11 @@ function buildUserPrompt(keyword, today) {
 
 - title には上記キーワードまたはその自然な言い換えを含めてください。
 - slug はキーワードの意味を英語で表した半角英小文字のスラッグにしてください（ローマ字表記より、意味が伝わる英語を優先）。
-- heroImage には、記事全体のテーマを表す英語キーワードを使った https://loremflickr.com/1200/630/{english_keyword} を設定してください。
-- body は frontmatter を含めず本文の Markdown のみを返し、すべての H2 見出しの直下に ![日本語のaltテキスト](https://loremflickr.com/800/450/{english_keyword}) 形式の画像を1枚入れてください。
+- heroImage には、記事全体のテーマを表す英語キーワードを使った https://picsum.photos/seed/{english_keyword}/1200/630 を設定してください。
+- body は frontmatter を含めず本文の Markdown のみを返してください。
+- 画像は必須です。body に出てくるすべての H2 見出し（##）の直下に、空行を挟んで ![日本語のaltテキスト](https://picsum.photos/seed/{english_keyword}/800/450) 形式の画像を必ず1枚ずつ入れ、画像のない H2 見出しを1つも作らないでください。
+- {english_keyword} は見出しごとに変え、半角英小文字とハイフンだけの2〜3語にしてください（例: wireless-earbuds-case）。picsum.photos 以外の画像 URL は使わないでください。
+- imageSeeds には、body の H2 見出しの順番どおりに、各画像で使った {english_keyword} を並べてください。要素数は H2 見出しの数と同じにしてください。
 - 商品へのリンクは [〇〇を楽天市場で探す](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で商品が見つかる日本語の商品名・カテゴリ名（スペースなし・20文字以内）を入れてください。`;
 }
 
@@ -419,11 +451,16 @@ async function generateArticle({ client, keyword, model, useFallback }) {
 		throw new Error(`モデルの応答を JSON として解析できませんでした:\n${text.slice(0, 500)}`);
 	}
 
+	// imageSeeds は配列なので、文字列必須チェックの対象から外す
 	for (const field of ARTICLE_SCHEMA.required) {
+		if (field === 'imageSeeds') continue;
 		if (typeof article[field] !== 'string' || article[field].trim() === '') {
 			throw new Error(`生成結果に ${field} が含まれていません`);
 		}
 	}
+
+	// 画像シードは見出し画像の補完にしか使わないため、欠けていても生成は続行する
+	if (!Array.isArray(article.imageSeeds)) article.imageSeeds = [];
 
 	return { article, servedBy: message.model, usage: message.usage };
 }
@@ -450,10 +487,79 @@ function normalizeSlug(raw, fallbackSeed) {
 }
 
 /**
- * 本文に混ざりうる frontmatter・H1・コードフェンスを取り除き、
- * 画像 URL とアフィリエイトリンクを正規化する。
+ * 本文のすべての H2 見出しの直下に画像が1枚あることを保証する。
+ * AI が画像を書き忘れた場合や、picsum 以外の URL だったために除去された場合でも、
+ * ここで見出しごとに1枚補う（画像が入るかどうかを AI の出力任せにしない）。
  */
-function normalizeBody(body, fallbackKeyword) {
+function ensureHeadingImages(text, { imageSeeds = [], slug }) {
+	const usedSeeds = new Set();
+
+	// 既に本文にある画像のシードを先に登録し、補った画像が同じ絵柄にならないようにする
+	for (const [, url] of text.matchAll(/!\[[^\]]*\]\((\S+?)\)/g)) {
+		const seed = extractImageSeed(url);
+		if (seed) usedSeeds.add(seed);
+	}
+
+	const seedQueue = imageSeeds.map(sanitizeImageSeed).filter(Boolean);
+	let headings = 0;
+
+	// AI が用意したシードを順に使い、尽きたらスラッグと見出し番号から作る。
+	// 同じシードは同じ画像になるため、既に使われていれば連番でずらす。
+	const takeSeed = () => {
+		const base =
+			seedQueue.shift() || sanitizeImageSeed(`${slug}-${headings}`) || `section-${headings}`;
+
+		let seed = base;
+		for (let suffix = 2; usedSeeds.has(seed); suffix++) seed = `${base}-${suffix}`;
+		usedSeeds.add(seed);
+
+		return seed;
+	};
+
+	const lines = text.split('\n');
+	const output = [];
+	let inCodeFence = false;
+	let inserted = 0;
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		output.push(line);
+
+		// コードフェンスの中身は本文ではないので見出しとして扱わない
+		if (/^[ \t]*```/.test(line)) {
+			inCodeFence = !inCodeFence;
+			continue;
+		}
+		if (inCodeFence) continue;
+
+		// ## だけを対象にする（### は ## の次が # なのでここには一致しない）
+		const heading = line.match(/^##[ \t]+(.+?)[ \t]*$/);
+		if (!heading) continue;
+		headings++;
+
+		// 見出しの次にある最初の本文行（空行は読み飛ばす）が画像かどうかを見る
+		let next = i + 1;
+		while (next < lines.length && lines[next].trim() === '') next++;
+		if (/^!\[[^\]]*\]\(\S+?\)[ \t]*$/.test(lines[next] ?? '')) continue;
+
+		// 画像がないので補う。alt テキストは見出しから組み立てる
+		const label = heading[1].replace(/[[\]()`*_#|]/g, '').trim();
+		const alt = label ? `${label}のイメージ写真` : 'この見出しの内容をイメージした写真';
+
+		// 前後に空行を入れて、独立した段落として画像が描画されるようにする
+		output.push('', `![${alt}](${buildImageUrl(takeSeed(), BODY_IMAGE_SIZE)})`, '');
+		inserted++;
+	}
+
+	return { text: output.join('\n'), headings, inserted };
+}
+
+/**
+ * 本文に混ざりうる frontmatter・H1・コードフェンスを取り除き、
+ * 画像 URL とアフィリエイトリンクを正規化したうえで、
+ * すべての H2 見出しの直下に画像が入っている状態にする。
+ */
+function normalizeBody(body, { fallbackKeyword, imageSeeds, slug }) {
 	let text = body.replace(/\r\n/g, '\n').trim();
 
 	// 全体がコードフェンスで包まれている場合は外す
@@ -475,8 +581,9 @@ function normalizeBody(body, fallbackKeyword) {
 	// frontmatter 外に漏れた heroImage 行を除去
 	text = text.replace(/^[ \t]*heroImage[ \t]*:.*\n?/gim, '');
 
-	// 画像は LoremFlickr のものだけ残し、サイズを 800x450 に揃える。
-	// それ以外（ローカルパスや他ドメイン）は存在しない画像を参照してビルドや表示が壊れるため除去する。
+	// 画像は Picsum のものだけ残し、サイズを 800x450 に揃える。
+	// それ以外（ローカルパスや他ドメイン）は存在しない画像を参照してビルドや表示が壊れるため、
+	// ここでいったん除去し、後続の ensureHeadingImages で見出しごとに貼り直す。
 	text = text.replace(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g, (_match, alt, url) => {
 		const normalized = normalizeImageUrl(url, BODY_IMAGE_SIZE);
 		if (!normalized) return '';
@@ -484,14 +591,24 @@ function normalizeBody(body, fallbackKeyword) {
 	});
 	text = text.replace(/<img\b[^>]*>/gi, '');
 
+	// すべての H2 見出しの直下に画像があることを保証する
+	// （AI が入れ忘れた分・上で除去された分をここで補う）
+	const images = ensureHeadingImages(text, { imageSeeds, slug });
+	text = images.text;
+
 	// AFFILIATE_LINK プレースホルダーを実際の楽天アフィリエイト検索リンクに差し替える
 	const affiliate = insertAffiliateLinks(text, fallbackKeyword);
 	text = affiliate.text;
 
-	// 除去の結果できた空行の連続をまとめる
+	// 除去・挿入の結果できた空行の連続をまとめる
 	text = text.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n');
 
-	return { body: `${text.trim()}\n`, affiliateLinks: affiliate.replaced };
+	return {
+		body: `${text.trim()}\n`,
+		affiliateLinks: affiliate.replaced,
+		headings: images.headings,
+		insertedImages: images.inserted,
+	};
 }
 
 /** YAML のシングルクオート文字列として安全な形にする。 */
@@ -546,7 +663,11 @@ async function main() {
 		);
 	}
 
-	const { body, affiliateLinks } = normalizeBody(article.body, options.keyword);
+	const { body, affiliateLinks, headings, insertedImages } = normalizeBody(article.body, {
+		fallbackKeyword: options.keyword,
+		imageSeeds: article.imageSeeds,
+		slug,
+	});
 	if (affiliateLinks === 0) {
 		console.warn(
 			'警告: 本文にアフィリエイトリンクが挿入されませんでした（AFFILIATE_LINK プレースホルダーが見つかりません）。',
@@ -557,7 +678,7 @@ async function main() {
 	const heroImage = normalizeImageUrl(article.heroImage, HERO_IMAGE_SIZE);
 	if (!heroImage) {
 		console.warn(
-			`警告: heroImage が LoremFlickr の URL として解釈できませんでした（${article.heroImage}）。プレースホルダー画像を使います。`,
+			`警告: heroImage が ${IMAGE_HOST} の URL として解釈できませんでした（${article.heroImage}）。プレースホルダー画像を使います。`,
 		);
 	}
 
@@ -575,7 +696,10 @@ async function main() {
 	console.log(`\n生成しました: ${path.relative(projectRoot, filePath)}`);
 	console.log(`  タイトル: ${article.title}`);
 	console.log(`  本文: 約${body.length}文字`);
-	console.log(`  本文中の画像: ${(body.match(/!\[[^\]]*\]\(/g) ?? []).length}枚`);
+	const bodyImages = (body.match(/!\[[^\]]*\]\(/g) ?? []).length;
+	console.log(
+		`  本文中の画像: ${bodyImages}枚（H2見出し ${headings}個 / うち自動補完 ${insertedImages}枚）`,
+	);
 	console.log(`  楽天アフィリエイトリンク: ${affiliateLinks}本`);
 	if (servedBy !== options.model) console.log(`  応答モデル: ${servedBy}（フォールバック）`);
 	if (tokenUsage) {

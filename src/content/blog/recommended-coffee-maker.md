@@ -2,7 +2,7 @@
 title: 'おすすめコーヒーメーカー比較｜失敗しない選び方'
 description: 'コーヒーメーカーの選び方を抽出方式・容量・手入れのしやすさから解説し、全自動やドリップ式などタイプ別におすすめを比較表付きで紹介します。価格帯の目安やよくある質問もまとめました。'
 pubDate: '2026-09-14'
-heroImage: 'https://image.pollinations.ai/prompt/coffee%20maker%20brewing%20on%20kitchen%20counter?width=1200&height=630&nologo=true'
+heroImage: 'coffee_maker_hero.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

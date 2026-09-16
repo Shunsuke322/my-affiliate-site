@@ -97,7 +97,7 @@ heroImage: '/kukiseijoki_hero.jpg'
 
 ## ペット・タバコ臭対策は脱臭性能を重視
 
-![空気清浄機のそばでくつろぐ犬](https://image.pollinations.ai/prompt/pet%20dog%20beside%20air%20purifier?width=800&height=450&nologo=true)
+![空気清浄機のそばでくつろぐ犬](/pet_tabaco.jpg)
 
 ニオイ対策を最優先するなら、脱臭フィルターの構成と吸引方式に注目します。ペットの抜け毛が多い家庭では、プレフィルターの掃除がしやすい構造かどうかも実用面で効いてきます。
 

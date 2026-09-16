@@ -2,7 +2,7 @@
 title: 'おすすめ「空気清浄機」の選び方と用途別比較ガイド'
 description: '花粉・ハウスダスト・ペット臭など目的別に空気清浄機の選び方を解説。適用畳数やフィルター、加湿機能の違いを比較表で整理し、タイプ別のおすすめと購入前のチェックポイントを紹介します。'
 pubDate: '2026-09-16'
-heroImage: 'kukiseijoki_hero.jpg'
+heroImage: '/kukiseijoki_hero.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

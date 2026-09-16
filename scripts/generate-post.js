@@ -318,18 +318,18 @@ const ARTICLE_SCHEMA = {
 		heroImage: {
 			type: 'string',
 			description:
-				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://image.pollinations.ai/prompt/{english_keyword}?width=1200&height=630&nologo=true の形式で出力する（例: https://image.pollinations.ai/prompt/laptop on wooden desk?width=1200&height=630&nologo=true）。',
+				'frontmatter のアイキャッチ画像 URL。記事全体のテーマを表す英語キーワードを使い、https://image.pollinations.ai/prompt/{english_keyword}?width=1200&height=630&nologo=true の形式で出力する（例: https://image.pollinations.ai/prompt/laptop on wooden desk?width=1200&height=630&nologo=true）。{english_keyword} は必ず英語で書き、日本語（ひらがな・カタカナ・漢字）やローマ字表記は使わない。',
 		},
 		imagePrompts: {
 			type: 'array',
 			description:
-				'body の H2 見出しの順番に対応する、本文画像用の英語キーワード（画像生成プロンプト）の配列。要素数は H2 見出しの数と一致させる。各要素は半角英小文字とスペースのみの2〜5語（例: laptop on wooden desk）。',
+				'body の H2 見出しの順番に対応する、本文画像用の英語キーワード（画像生成プロンプト）の配列。要素数は H2 見出しの数と一致させる。各要素は必ず英語で書き、半角英小文字とスペースのみの2〜5語にする（例: laptop on wooden desk）。日本語（ひらがな・カタカナ・漢字）や日本語のローマ字表記（例: nomupasokon）は使わず、必ず英単語に翻訳する。',
 			items: { type: 'string' },
 		},
 		body: {
 			type: 'string',
 			description:
-				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。すべての H2 見出しの直下に、空行を挟んで ![日本語のaltテキスト](https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true) 形式の画像を必ず1枚入れる（画像のない H2 見出しを作らない）。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
+				'記事本文の Markdown。frontmatter と H1 見出しは含めない（H2 から始める）。すべての H2 見出しの直下に、空行を挟んで ![日本語のaltテキスト](https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true) 形式の画像を必ず1枚入れる（画像のない H2 見出しを作らない）。URL の {english_keyword} は必ず英語で書き、日本語やローマ字表記は使わない（alt テキストだけが日本語）。商品へのリンクは [リンクテキスト](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で検索して商品が見つかる日本語の商品名・カテゴリ名（例: ワイヤレスイヤホン）を入れる。',
 		},
 	},
 	required: ['title', 'description', 'slug', 'heroImage', 'imagePrompts', 'body'],
@@ -370,6 +370,9 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 - 画像は Markdown の画像記法 ![altテキスト](URL) で書く。<img> タグやローカルの画像パス、image.pollinations.ai 以外の URL は使わない。
 - 本文中の画像の URL は必ず https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true の形式にする。クエリ文字列（?width=800&height=450&nologo=true）を省略したり書き換えたりしない。
 - {english_keyword} はその見出しの内容に沿った英語キーワード（画像生成 AI へのプロンプト）を自分で考えて埋め込む。半角英小文字とスペースのみで、2〜5語まで（例: laptop on wooden desk、wireless earbuds charging case）。日本語・記号・カンマ・アンダースコアは入れない。
+- 画像プロンプト（{english_keyword} と imagePrompts の各要素）は、例外なく必ず英語で書く。画像生成 AI が英語のプロンプトしか解釈できないため、日本語が混ざると意図しない画像になる。
+  - ひらがな・カタカナ・漢字を1文字でも含めない。日本語をローマ字にしただけの語（例: noto pasokon、wairesu iyahon）も使わない。必ず意味の通る英単語に翻訳する（例: 「ノートパソコン」→ laptop computer、「ワイヤレスイヤホン」→ wireless earbuds、「ロボット掃除機」→ robot vacuum cleaner）。
+  - 日本語の商品名・ブランド名しか思いつかない場合は、その商品カテゴリを表す一般的な英語表現に置き換える。
 - 見出しごとに異なるキーワードを選び、同じ URL を繰り返さない（キーワードが同じだと同じような画像になる）。
 - alt テキストには画像の内容を表す日本語の説明を入れる。空にしたり、英語キーワードをそのまま書いたりしない。
 - 次の形をそのまま真似して書く:
@@ -385,6 +388,7 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 - body に含まれる ## で始まる行をすべて数え、その直下に image.pollinations.ai の画像行があるか1つずつ確認する。
 - 抜けている見出しがあれば、返答する前に画像行を追記する。
 - imagePrompts の要素数が H2 見出しの数と一致しているか確認する。
+- heroImage・本文画像の URL・imagePrompts の各要素に日本語（ひらがな・カタカナ・漢字）やローマ字表記が混ざっていないか1つずつ確認し、混ざっていれば英語に直してから返答する。
 
 # 出力してはいけないもの（重要）
 - body に frontmatter（--- で囲まれたメタデータ）は書かない。title・description・slug・heroImage はそれぞれのフィールドで返す。
@@ -407,6 +411,7 @@ function buildUserPrompt(keyword, today, existingPosts = []) {
 - body は frontmatter を含めず本文の Markdown のみを返してください。
 - 画像は必須です。body に出てくるすべての H2 見出し（##）の直下に、空行を挟んで ![日本語のaltテキスト](https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true) 形式の画像を必ず1枚ずつ入れ、画像のない H2 見出しを1つも作らないでください。
 - {english_keyword} は見出しごとに変え、半角英小文字とスペースだけの2〜5語にしてください（例: wireless earbuds charging case）。image.pollinations.ai 以外の画像 URL は使わないでください。
+- 画像プロンプト（{english_keyword} と imagePrompts の各要素）は必ず英語で書いてください。ひらがな・カタカナ・漢字は1文字も入れず、ローマ字表記（例: noto pasokon）も使わず、意味の通る英単語に翻訳してください（例: 「ノートパソコン」→ laptop computer）。
 - imagePrompts には、body の H2 見出しの順番どおりに、各画像で使った {english_keyword} を並べてください。要素数は H2 見出しの数と同じにしてください。
 - 商品へのリンクは [〇〇を楽天市場で探す](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で商品が見つかる日本語の商品名・カテゴリ名（スペースなし・20文字以内）を入れてください。${buildExistingPostsSection(existingPosts)}`;
 }

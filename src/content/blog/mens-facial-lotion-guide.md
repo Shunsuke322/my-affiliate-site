@@ -2,7 +2,7 @@
 title: 'おすすめメンズ化粧水の選び方と肌悩み別比較ガイド'
 description: 'メンズ化粧水の選び方を、肌質・肌悩み・テクスチャーの観点から解説します。保湿重視からさっぱり系、オールインワンまでタイプ別に比較し、使い方のコツやよくある質問もまとめました。'
 pubDate: '2026-09-16'
-heroImage: 'https://image.pollinations.ai/prompt/mens%20skincare%20lotion%20bottle%20on%20bathroom?width=1200&height=630&nologo=true'
+heroImage: '/keshousui_hero.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

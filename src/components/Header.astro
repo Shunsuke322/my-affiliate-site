@@ -42,13 +42,17 @@ import HeaderLink from './HeaderLink.astro';
 		text-decoration: none;
 		border-bottom-color: var(--accent);
 	}
-	.social-links,
-	.social-links a {
+	.internal-links {
 		display: flex;
+		align-items: center;
+		margin-left: auto;
 	}
-	@media (max-width: 720px) {
-		.social-links {
-			display: none;
-		}
+	.internal-links a {
+		padding: 1em 0.5em;
+		color: #333333 !important;
+		text-decoration: none !important;
+	}
+	.internal-links a:hover {
+		color: #bf0000 !important;
 	}
 </style>

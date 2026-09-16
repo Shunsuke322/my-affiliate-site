@@ -2,7 +2,7 @@
 title: '初心者向けノートパソコンおすすめ比較と選び方'
 description: '初めてノートパソコンを買う人向けに、CPU・メモリ・画面サイズなど失敗しない選び方と、用途別のおすすめタイプを比較表つきで解説します。学習・在宅ワーク・動画視聴まで対応する1台の見つけ方が分かります。'
 pubDate: '2026-09-16'
-heroImage: 'https://image.pollinations.ai/prompt/laptop%20computer%20on%20bright%20desk?width=1200&height=630&nologo=true'
+heroImage: '/notepc_hero.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

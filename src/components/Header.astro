@@ -5,50 +5,58 @@ import HeaderLink from './HeaderLink.astro';
 
 <header>
 	<nav>
-		<h2><a href="/"><img src="/logo_haikeitouka.png" alt={SITE_TITLE} style="height: 60px; width: auto;" /></a></h2>
+		<h2>
+			<a href="/">
+				<img src="/logo_haikeitouka.png" alt={SITE_TITLE} style="height: 60px; width: auto; display: block;" />
+			</a>
+		</h2>
 		<div class="internal-links">
 			<HeaderLink href="/">Home</HeaderLink>
 		</div>
 	</nav>
 </header>
+
 <style>
 	header {
 		margin: 0;
 		padding: 0 1em;
-		background: white;
-		box-shadow: 0 2px 8px rgba(var(--black), 5%);
+		background: #ffffff;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+		width: 100%;
+	}
+	nav {
+		display: flex !important;
+		flex-direction: row !important;
+		align-items: center !important;
+		justify-content: space-between !important;
+		width: 100%;
+		max-width: 960px;
+		margin: 0 auto;
 	}
 	h2 {
 		margin: 0;
 		font-size: 1em;
-	}
-	/* ロゴ画像の下に余計な線が出ないように微調整 */
-	h2 a,
-	h2 a.active {
-		text-decoration: none;
-		padding: 0;
-		border-bottom: none;
-	}
-	nav {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 	}
-	nav a {
+	h2 a {
+		display: flex;
+		align-items: center;
+		text-decoration: none !important;
+		border-bottom: none !important;
+		padding: 0 !important;
+	}
+	.internal-links {
+		display: flex !important;
+		align-items: center !important;
+	}
+	.internal-links a {
 		padding: 1em 0.5em;
-		color: var(--black);
+		color: #222222;
 		border-bottom: 4px solid transparent;
 		text-decoration: none;
 	}
-	nav a.active {
-		text-decoration: none;
-		border-bottom-color: var(--accent);
-	}
-	
-	/* ★修正ポイント：不要な記述を消し、Homeを確実に右へ押しやる設定に変更★ */
-	.internal-links {
-		display: flex;
-		align-items: center;
-		margin-left: auto;
+	.internal-links a.active {
+		border-bottom-color: #bf0000;
 	}
 </style>

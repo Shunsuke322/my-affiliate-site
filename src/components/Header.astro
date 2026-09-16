@@ -22,10 +22,12 @@ import HeaderLink from './HeaderLink.astro';
 		margin: 0;
 		font-size: 1em;
 	}
-
+	/* ロゴ画像の下に余計な線が出ないように微調整 */
 	h2 a,
 	h2 a.active {
 		text-decoration: none;
+		padding: 0;
+		border-bottom: none;
 	}
 	nav {
 		display: flex;
@@ -42,13 +44,11 @@ import HeaderLink from './HeaderLink.astro';
 		text-decoration: none;
 		border-bottom-color: var(--accent);
 	}
-	.social-links,
-	.social-links a {
+	
+	/* ★修正ポイント：不要な記述を消し、Homeを確実に右へ押しやる設定に変更★ */
+	.internal-links {
 		display: flex;
-	}
-	@media (max-width: 720px) {
-		.social-links {
-			display: none;
-		}
+		align-items: center;
+		margin-left: auto;
 	}
 </style>

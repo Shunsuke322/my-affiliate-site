@@ -2,7 +2,7 @@
 title: 'おすすめモバイルバッテリー6選｜失敗しない選び方'
 description: 'モバイルバッテリーの選び方を容量・出力・サイズの観点から整理し、小型軽量モデルからマグネット式、20000mAhの大容量まで用途別におすすめタイプを比較表付きで紹介します。購入前の疑問にも回答。'
 pubDate: '2026-09-14'
-heroImage: '/mobile-battery-hero.jpg'
+heroImage: '/mobile-battery-hero.jpg.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

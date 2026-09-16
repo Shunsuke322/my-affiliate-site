@@ -5,7 +5,7 @@ import HeaderLink from './HeaderLink.astro';
 
 <header>
 	<nav>
-		<h2><a href="/"><img src="/logo_haikeitouka.png" alt={SITE_TITLE} style="height: 70px; width: auto;" /></a></h2>
+		<h2><a href="/"><img src="/logo.png" alt={SITE_TITLE} style="height: 60px; width: auto;" /></a></h2>
 		<div class="internal-links">
 			<HeaderLink href="/">Home</HeaderLink>
 		</div>
@@ -22,34 +22,29 @@ import HeaderLink from './HeaderLink.astro';
 		margin: 0;
 		font-size: 1em;
 	}
-
 	h2 a,
 	h2 a.active {
 		text-decoration: none;
+		border-bottom: none;
+		padding: 0;
 	}
 	nav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .internal-links {
-    display: flex;
-    align-items: center;
-  }
-  nav a {
-    padding: 1em 0.5em;
-    color: var(--black);
-    border-bottom: 4px solid transparent;
-    text-decoration: none;
-  }
-  nav a.active {
-    text-decoration: none;
-    border-bottom-color: var(--accent);
-  }
-  /* ロゴ画像のリンク枠調整 */
-  h2 a,
-  h2 a.active {
-    padding: 0;
-    border-bottom: none;
-  }
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	nav a {
+		padding: 1em 0.5em;
+		color: var(--black);
+		border-bottom: 4px solid transparent;
+		text-decoration: none;
+	}
+	nav a.active {
+		text-decoration: none;
+		border-bottom-color: var(--accent);
+	}
+	.internal-links {
+		display: flex;
+		align-items: center;
+	}
 </style>

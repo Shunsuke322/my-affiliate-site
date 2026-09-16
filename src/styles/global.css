@@ -343,3 +343,22 @@ hr {
 		margin: 2em 0;
 	}
 }
+/* 楽天風アフィリエイトボタン */
+.btn-rakuten {
+  display: inline-block;
+  background-color: #bf0000; /* 赤系統のアクセント */
+  color: #ffffff !important;
+  font-weight: bold;
+  padding: 12px 24px;
+  border-radius: 6px;
+  text-decoration: none;
+  text-align: center;
+  margin: 15px 0;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn-rakuten:hover {
+  background-color: #990000;
+  transform: translateY(-2px);
+}

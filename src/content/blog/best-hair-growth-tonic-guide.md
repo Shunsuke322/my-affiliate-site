@@ -2,7 +2,7 @@
 title: 'おすすめ育毛剤の選び方とタイプ別比較ガイド'
 description: '育毛剤選びで迷う人向けに、有効成分や剤形の見極め方、タイプ別の比較表、使い方のコツをまとめました。頭皮環境や悩みに合わせた選び方と、よくある疑問への回答も紹介します。'
 pubDate: '2026-09-14'
-heroImage: 'https://image.pollinations.ai/prompt/hair%20care%20tonic%20bottle?width=1200&height=630&nologo=true'
+heroImage: 'ikumozai_hero.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

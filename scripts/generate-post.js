@@ -210,6 +210,94 @@ function insertAffiliateLinks(text, fallbackKeyword) {
 	return { text: result, replaced };
 }
 
+/**
+ * frontmatter の title 行からタイトルを取り出す。
+ * 取り出せない場合は空文字を返す（重複判定はスラッグ側で行うため致命的ではない）。
+ */
+function extractFrontmatterTitle(contents) {
+	const text = contents.replace(/\r\n/g, '\n');
+	if (!text.startsWith('---\n')) return '';
+
+	const closing = text.indexOf('\n---', 3);
+	const frontmatter = closing === -1 ? text : text.slice(4, closing);
+
+	const match = frontmatter.match(/^title[ \t]*:[ \t]*(.+?)[ \t]*$/m);
+	if (!match) return '';
+
+	const value = match[1].trim();
+	// YAML のクオートを外す（シングルクオート内の '' は ' のエスケープ）
+	if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+		return value.slice(1, -1).replace(/''/g, "'");
+	}
+	if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+		return value.slice(1, -1).replace(/\\"/g, '"');
+	}
+	return value;
+}
+
+/**
+ * src/content/blog/ にある既存記事のスラッグ（ファイル名）とタイトルを集める。
+ * AI に「既にあるテーマ」を伝えて重複を避けさせるために使う。
+ */
+function readExistingPosts() {
+	if (!fs.existsSync(blogDir)) return [];
+
+	return fs
+		.readdirSync(blogDir)
+		.filter((name) => name.toLowerCase().endsWith('.md'))
+		.map((name) => {
+			const slug = name.replace(/\.md$/i, '');
+			let title = '';
+			try {
+				// frontmatter だけ読めればよいので先頭のみ読み込む
+				title = extractFrontmatterTitle(
+					fs.readFileSync(path.join(blogDir, name), 'utf8').slice(0, 2000),
+				);
+			} catch {
+				// 読めないファイルはタイトルなしで扱う
+			}
+			return { slug, title };
+		})
+		.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/** 既存記事の一覧を、プロンプトに差し込む「重複禁止」セクションの文字列にする。 */
+function buildExistingPostsSection(existingPosts) {
+	if (existingPosts.length === 0) return '';
+
+	const list = existingPosts
+		.map(({ slug, title }) => `- ${slug}${title ? `（${title}）` : ''}`)
+		.join('\n');
+
+	return `
+
+# 既存記事一覧（重複禁止）
+以下の既存テーマ・スラッグとは絶対に被らない、新しいジャンル・キーワードで記事を作成してください。
+
+${list}
+
+- 上に並んだスラッグと同じ、または一字違い程度の似たスラッグは使わないでください。
+- 上の記事と同じ商品ジャンル・切り口になりそうな場合は、指定キーワードの中でも未使用の切り口・サブジャンルを選び、title と slug の両方を既存記事と明確に区別できるものにしてください。`;
+}
+
+/**
+ * 既存ファイルと重複しないスラッグを返す。
+ * 重複した場合は末尾に日付（-YYYYMMDD）を付けてファイルの上書きを防ぐ。
+ * 日付付きでも重複する場合（同日に2本目以降）は連番を足す。
+ */
+function resolveUniqueSlug(slug, existingSlugs) {
+	if (!existingSlugs.has(slug)) return slug;
+
+	const datestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+	const dated = `${slug}-${datestamp}`;
+	if (!existingSlugs.has(dated)) return dated;
+
+	for (let suffix = 2; ; suffix++) {
+		const candidate = `${dated}-${suffix}`;
+		if (!existingSlugs.has(candidate)) return candidate;
+	}
+}
+
 /** 構造化出力のスキーマ。frontmatter 用の項目と本文を分けて受け取る。 */
 const ARTICLE_SCHEMA = {
 	type: 'object',
@@ -307,7 +395,7 @@ const SYSTEM_PROMPT = `あなたは日本語のアフィリエイトメディア
 - 誇大表現（絶対、必ず儲かる、最安値保証 等）は使わない。
 - 「この記事では〜」以外のメタ的な自己言及や、AI が生成したことへの言及は入れない。`;
 
-function buildUserPrompt(keyword, today) {
+function buildUserPrompt(keyword, today, existingPosts = []) {
 	return `次のキーワードでアフィリエイト記事を1本書いてください。
 
 キーワード: ${keyword}
@@ -320,7 +408,7 @@ function buildUserPrompt(keyword, today) {
 - 画像は必須です。body に出てくるすべての H2 見出し（##）の直下に、空行を挟んで ![日本語のaltテキスト](https://image.pollinations.ai/prompt/{english_keyword}?width=800&height=450&nologo=true) 形式の画像を必ず1枚ずつ入れ、画像のない H2 見出しを1つも作らないでください。
 - {english_keyword} は見出しごとに変え、半角英小文字とスペースだけの2〜5語にしてください（例: wireless earbuds charging case）。image.pollinations.ai 以外の画像 URL は使わないでください。
 - imagePrompts には、body の H2 見出しの順番どおりに、各画像で使った {english_keyword} を並べてください。要素数は H2 見出しの数と同じにしてください。
-- 商品へのリンクは [〇〇を楽天市場で探す](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で商品が見つかる日本語の商品名・カテゴリ名（スペースなし・20文字以内）を入れてください。`;
+- 商品へのリンクは [〇〇を楽天市場で探す](AFFILIATE_LINK:検索キーワード) の形式で書き、検索キーワードには楽天市場で商品が見つかる日本語の商品名・カテゴリ名（スペースなし・20文字以内）を入れてください。${buildExistingPostsSection(existingPosts)}`;
 }
 
 function parseArgs(argv) {
@@ -389,7 +477,7 @@ async function requestArticle(client, params) {
 	return message;
 }
 
-async function generateArticle({ client, keyword, model, useFallback }) {
+async function generateArticle({ client, keyword, model, useFallback, existingPosts = [] }) {
 	const params = {
 		model,
 		max_tokens: 32000,
@@ -397,7 +485,11 @@ async function generateArticle({ client, keyword, model, useFallback }) {
 		messages: [
 			{
 				role: 'user',
-				content: buildUserPrompt(keyword, new Date().toISOString().slice(0, 10)),
+				content: buildUserPrompt(
+					keyword,
+					new Date().toISOString().slice(0, 10),
+					existingPosts,
+				),
 			},
 		],
 		thinking: { type: 'adaptive' },
@@ -646,16 +738,35 @@ async function main() {
 	// API キーが未設定でも `ant auth login` のプロファイルで動くため、ここでは弾かない
 	const client = new Anthropic();
 
+	// 既存記事のスラッグとタイトルを先に集め、AI に「被らせないテーマ一覧」として渡す
+	const existingPosts = readExistingPosts();
+	const existingSlugs = new Set(existingPosts.map((post) => post.slug));
+
 	console.log(`キーワード「${options.keyword}」の記事を ${options.model} で生成します...`);
+	if (existingPosts.length > 0) {
+		console.log(`  既存記事 ${existingPosts.length} 件と重複しないよう指示します。`);
+	}
 
 	const { article, servedBy, usage: tokenUsage } = await generateArticle({
 		client,
 		keyword: options.keyword,
 		model: options.model,
 		useFallback: options.fallback,
+		existingPosts,
 	});
 
-	const slug = normalizeSlug(options.slug ?? article.slug, options.keyword);
+	const requestedSlug = normalizeSlug(options.slug ?? article.slug, options.keyword);
+	let slug = requestedSlug;
+
+	// AI が既存記事と同じスラッグを返した場合は日付を足して上書きを避ける。
+	// --slug での明示指定は利用者の意図なので、従来どおり下のチェックでエラーにする。
+	if (!options.slug && !options.force && existingSlugs.has(slug)) {
+		slug = resolveUniqueSlug(slug, existingSlugs);
+		console.warn(
+			`警告: スラッグ「${requestedSlug}」が既存記事と重複したため「${slug}」に変更しました。テーマ自体が既存記事と被っていないか確認してください。`,
+		);
+	}
+
 	const filePath = path.join(blogDir, `${slug}.md`);
 
 	if (fs.existsSync(filePath) && !options.force) {

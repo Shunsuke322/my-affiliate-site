@@ -2,7 +2,7 @@
 title: 'おすすめのスカルプシャンプー選び方と比較ガイド'
 description: 'スカルプシャンプーの選び方を洗浄成分・頭皮タイプ・価格帯から解説します。アミノ酸系やノンシリコンなどタイプ別の比較表と、メリット・デメリット、よくある質問までまとめた保存版ガイドです。'
 pubDate: '2026-09-14'
-heroImage: 'https://image.pollinations.ai/prompt/scalp%20shampoo%20bottles%20in%20bathroom?width=1200&height=630&nologo=true'
+heroImage: 'scalpe_shampoo_hero.jpg'
 ---
 
 ※本記事にはアフィリエイト広告（PR）を含みます。

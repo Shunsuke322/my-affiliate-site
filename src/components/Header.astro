@@ -5,7 +5,7 @@ import HeaderLink from './HeaderLink.astro';
 
 <header>
 	<nav>
-		<h2><a href="/"><img src="/logo.png" alt={SITE_TITLE} style="height: 60px; width: auto;" /></a></h2>
+		<h2><a href="/"><img src="/logo_haikeitouka.png" alt={SITE_TITLE} style="height: 60px; width: auto;" /></a></h2>
 		<div class="internal-links">
 			<HeaderLink href="/">Home</HeaderLink>
 		</div>
@@ -22,11 +22,10 @@ import HeaderLink from './HeaderLink.astro';
 		margin: 0;
 		font-size: 1em;
 	}
+
 	h2 a,
 	h2 a.active {
 		text-decoration: none;
-		border-bottom: none;
-		padding: 0;
 	}
 	nav {
 		display: flex;
@@ -43,8 +42,13 @@ import HeaderLink from './HeaderLink.astro';
 		text-decoration: none;
 		border-bottom-color: var(--accent);
 	}
-	.internal-links {
+	.social-links,
+	.social-links a {
 		display: flex;
-		align-items: center;
+	}
+	@media (max-width: 720px) {
+		.social-links {
+			display: none;
+		}
 	}
 </style>
